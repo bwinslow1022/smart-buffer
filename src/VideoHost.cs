@@ -86,7 +86,7 @@ namespace SmartBuffer
                 HasFailed = true;
                 Playing = false;
                 badge.Visibility = Visibility.Collapsed;
-                problem.Text = "This video can't play here, Windows may be missing its codec.\nClick to open it in your default player.";
+                problem.Text = "This video can't play here, Windows is missing its codec.\nAV1 clips need the free \"AV1 Video Extension\" from the Microsoft Store.\nClick to open it in your default player.";
                 problem.Visibility = Visibility.Visible;
                 Failed?.Invoke();
             };

@@ -11,7 +11,7 @@ namespace SmartBuffer
         private const string SceneName = "Clips";
         private const string GameSource = "Game";
         private const string DesktopSource = "Desktop";
-        private const string FallbackSaveHotkey = "Alt+F10";
+        private const string FallbackSaveHotkey = "Alt+M";
 
         // with separate tracks, 1 is the mix, 2 is desktop, 3 is mic
         private const int SplitDesktopMixers = 3;

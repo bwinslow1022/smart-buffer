@@ -50,7 +50,7 @@ irm https://raw.githubusercontent.com/bwinslow1022/smart-buffer/main/install.ps1
 
 | Action | Default |
 | --- | --- |
-| Save the last few minutes | <kbd>Alt</kbd> + <kbd>F10</kbd> |
+| Save the last few minutes | <kbd>Alt</kbd> + <kbd>M</kbd> |
 | Open the overlay | <kbd>Alt</kbd> + <kbd>X</kbd> |
 | Start or stop recording | <kbd>Alt</kbd> + <kbd>F9</kbd> |
 | Save a screenshot | <kbd>Alt</kbd> + <kbd>F1</kbd> |

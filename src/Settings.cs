@@ -14,7 +14,7 @@ namespace SmartBuffer
         public const string NoiseSpeex = "speex";
 
         public int ClipSeconds { get; set; } = 120;
-        public string SaveHotkey { get; set; } = "Alt+F10";
+        public string SaveHotkey { get; set; } = "Alt+M";
         public string OverlayHotkey { get; set; } = "Alt+X";
         public string RecordHotkey { get; set; } = "Alt+F9";
         public string ScreenshotHotkey { get; set; } = "Alt+F1";
