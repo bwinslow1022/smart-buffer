@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Web.Script.Serialization;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // what setup changed so remove can put it all back
     public sealed class State

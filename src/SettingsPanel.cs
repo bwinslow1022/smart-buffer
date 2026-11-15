@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // the settings tabs, opened from the gear
     public sealed class SettingsPanel : Panel
@@ -88,6 +88,7 @@ namespace ShadBuffer
             AddFolderRow(panel, ref y, "Save clips to", "Where should clips be saved?", draft.ClipsDir, value => draft.ClipsDir = value);
             AddFolderRow(panel, ref y, "Save recordings to", "Where should recordings be saved?", draft.RecordingsDir, value => draft.RecordingsDir = value);
             AddToggleRow(panel, ref y, "Sound when saved", draft.SaveSound, value => draft.SaveSound = value);
+            AddToggleRow(panel, ref y, "Notification when saved", draft.SaveNotification, value => draft.SaveNotification = value);
             AddToggleRow(panel, ref y, "Sort by game", draft.SortByGame, value => draft.SortByGame = value);
             return panel;
         }
@@ -126,6 +127,9 @@ namespace ShadBuffer
                 new Choice("High", 20),
                 new Choice("Medium", 24),
                 new Choice("Low (small files)", 28),
+                new Choice("35 Mbps (sharper than ShadowPlay)", 35000),
+                new Choice("20 Mbps (like ShadowPlay, ~150 MB/min)", 20000),
+                new Choice("12 Mbps (smaller, ~90 MB/min)", 12000),
             }, draft.Quality, value => draft.Quality = (int)value));
 
             AddRow(panel, ref y, "Frame rate", NewCombo(new[]
@@ -204,7 +208,7 @@ namespace ShadBuffer
             AddHotkeyRow(panel, ref y, "Screenshot", draft.ScreenshotHotkey, true, true, value => draft.ScreenshotHotkey = value);
             AddHotkeyRow(panel, ref y, "Instant Replay on/off", draft.ReplayHotkey, true, true, value => draft.ReplayHotkey = value);
             AddHotkeyRow(panel, ref y, "Microphone on/off", draft.MicHotkey, true, true, value => draft.MicHotkey = value);
-            panel.Controls.Add(NewLabel("While ShadBuffer runs, these combos belong to it, so a game that also uses one won't see the key. Press Delete in a box to turn one off.", new Point(0, y + Ui.S(8)), new Size(Ui.S(488), Ui.S(44)), Theme.Muted, 11.75F));
+            panel.Controls.Add(NewLabel("While Smart Buffer runs, these combos belong to it, so a game that also uses one won't see the key. Press Delete in a box to turn one off.", new Point(0, y + Ui.S(8)), new Size(Ui.S(488), Ui.S(44)), Theme.Muted, 11.75F));
             return panel;
         }
 
@@ -363,14 +367,12 @@ namespace ShadBuffer
         private void PickFolder(TextBox folder, string question, Action<string> changed)
         {
             dialogChanged(true);
-            using (var dialog = new FolderBrowserDialog { SelectedPath = folder.Text, Description = question })
+            string picked = FolderPicker.Pick(FindForm(), question, folder.Text);
+            if (picked != null)
             {
-                if (dialog.ShowDialog(this) == DialogResult.OK)
-                {
-                    changed(dialog.SelectedPath);
-                    folder.Text = dialog.SelectedPath;
-                    UpdateDirty();
-                }
+                changed(picked);
+                folder.Text = picked;
+                UpdateDirty();
             }
             dialogChanged(false);
             FindForm()?.Activate();

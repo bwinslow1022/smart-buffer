@@ -5,7 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public static class Setup
     {

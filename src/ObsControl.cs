@@ -3,10 +3,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public sealed class ObsStatus
     {
+        // counts saves since obs started, so a bigger number means something new was saved
+        public int Saved { get; set; } = -1;
+        public string SavedKind { get; set; } = "";
+        public string SavedGame { get; set; } = "";
         public bool ObsRunning { get; set; }
         public bool ScriptRunning { get; set; }
         public bool Replay { get; set; }
@@ -33,7 +37,7 @@ namespace ShadBuffer
         private const int ObsExitTimeoutMs = 20000;
         private const int ForceEndWaitMs = 8000;
         private const int ScriptWaitMs = 30000;
-        private const string OtherProfile = "OBS is open on a different profile, so ShadBuffer can't control it.";
+        private const string OtherProfile = "OBS is open on a different profile, so Smart Buffer can't control it.";
 
         public static ObsStatus ReadStatus(Context ctx)
         {
@@ -88,6 +92,18 @@ namespace ShadBuffer
                         else if (key == "game")
                         {
                             status.Game = value;
+                        }
+                        else if (key == "saved" && int.TryParse(value, out int saved))
+                        {
+                            status.Saved = saved;
+                        }
+                        else if (key == "savedkind")
+                        {
+                            status.SavedKind = value;
+                        }
+                        else if (key == "savedgame")
+                        {
+                            status.SavedGame = value;
                         }
                     }
                 }

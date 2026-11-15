@@ -5,7 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public sealed class MediaInfo
     {

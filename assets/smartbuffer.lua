@@ -3,18 +3,18 @@ local obs = obslua
 local ffi = require("ffi")
 
 ffi.cdef [[
-typedef struct { long left, top, right, bottom; } SHADBUFFER_RECT;
-typedef struct { unsigned long size; SHADBUFFER_RECT monitor; SHADBUFFER_RECT work; unsigned long flags; } SHADBUFFER_MONITORINFO;
-typedef int (*SHADBUFFER_ENUM)(void *, intptr_t);
+typedef struct { long left, top, right, bottom; } SMARTBUFFER_RECT;
+typedef struct { unsigned long size; SMARTBUFFER_RECT monitor; SMARTBUFFER_RECT work; unsigned long flags; } SMARTBUFFER_MONITORINFO;
+typedef int (*SMARTBUFFER_ENUM)(void *, intptr_t);
 int MultiByteToWideChar(unsigned int, unsigned long, const char *, int, wchar_t *, int);
 int WideCharToMultiByte(unsigned int, unsigned long, const wchar_t *, int, char *, int, const char *, int *);
 int PlaySoundW(const wchar_t *, void *, unsigned long);
 void *GetForegroundWindow(void);
 int InternalGetWindowText(void *, wchar_t *, int);
-int GetWindowRect(void *, SHADBUFFER_RECT *);
+int GetWindowRect(void *, SMARTBUFFER_RECT *);
 void *MonitorFromWindow(void *, unsigned long);
-int GetMonitorInfoW(void *, SHADBUFFER_MONITORINFO *);
-int EnumWindows(SHADBUFFER_ENUM, intptr_t);
+int GetMonitorInfoW(void *, SMARTBUFFER_MONITORINFO *);
+int EnumWindows(SMARTBUFFER_ENUM, intptr_t);
 unsigned long GetWindowThreadProcessId(void *, unsigned long *);
 unsigned long GetCurrentProcessId(void);
 int PostMessageW(void *, unsigned int, uintptr_t, intptr_t);
@@ -63,6 +63,9 @@ local clips_path = nil
 local record_path_wait = 0
 local last_mic = nil
 local moves = {}
+local saved_count = 0
+local saved_kind = ""
+local saved_game = ""
 
 local function wide(text)
     local size = ffi.C.MultiByteToWideChar(CP_UTF8, 0, text, -1, nil, 0)
@@ -115,8 +118,8 @@ local function foreground_game()
     if window == nil then
         return nil
     end
-    local rect = ffi.new("SHADBUFFER_RECT")
-    local info = ffi.new("SHADBUFFER_MONITORINFO")
+    local rect = ffi.new("SMARTBUFFER_RECT")
+    local info = ffi.new("SMARTBUFFER_MONITORINFO")
     info.size = ffi.sizeof(info)
     local monitor = ffi.C.MonitorFromWindow(window, MONITOR_NEAREST)
     if ffi.C.GetWindowRect(window, rect) == 0 or ffi.C.GetMonitorInfoW(monitor, info) == 0 then
@@ -152,7 +155,10 @@ local function write_status()
         .. "\nrecording=" .. recording
         .. "\nrecordstart=" .. record_started
         .. "\nmic=" .. last_mic
-        .. "\ngame=" .. (game or "") .. "\n"
+        .. "\ngame=" .. (game or "")
+        .. "\nsaved=" .. saved_count
+        .. "\nsavedkind=" .. saved_kind
+        .. "\nsavedgame=" .. saved_game .. "\n"
     obs.os_quick_write_utf8_file(status_file, text, #text, false)
 end
 
@@ -262,9 +268,20 @@ local function set_mic(on)
     status_dirty = true
 end
 
+local function note_saved(kind, folder)
+    saved_count = saved_count + 1
+    saved_kind = kind
+    saved_game = folder or ""
+    -- written straight away instead of on the next timer tick, so the saved card shows sooner
+    write_status()
+    status_dirty = false
+end
+
 local function on_event(event)
     if event == obs.OBS_FRONTEND_EVENT_REPLAY_BUFFER_SAVED then
-        move_into_game_folder(obs.obs_frontend_get_last_replay(), game or foreground_game() or DESKTOP_FOLDER, "Replay")
+        local folder = game or foreground_game() or DESKTOP_FOLDER
+        move_into_game_folder(obs.obs_frontend_get_last_replay(), folder, "Replay")
+        note_saved("clip", folder)
         play_sound()
     elseif event == obs.OBS_FRONTEND_EVENT_REPLAY_BUFFER_STARTED
         or event == obs.OBS_FRONTEND_EVENT_REPLAY_BUFFER_STOPPED then
@@ -276,13 +293,16 @@ local function on_event(event)
         play_sound()
     elseif event == obs.OBS_FRONTEND_EVENT_RECORDING_STOPPED then
         restore_clips_path()
-        move_into_game_folder(obs.obs_frontend_get_last_recording(), record_game or game or foreground_game() or DESKTOP_FOLDER, "")
+        local folder = record_game or game or foreground_game() or DESKTOP_FOLDER
+        move_into_game_folder(obs.obs_frontend_get_last_recording(), folder, "")
+        note_saved("recording", folder)
         record_started = 0
         record_game = nil
         status_dirty = true
         play_sound()
     elseif event == obs.OBS_FRONTEND_EVENT_SCREENSHOT_TAKEN then
         move_into_game_folder(obs.obs_frontend_get_last_screenshot(), shot_game or DESKTOP_FOLDER, "Screenshot")
+        note_saved("screenshot", shot_game or DESKTOP_FOLDER)
         shot_game = nil
         play_sound()
     end
@@ -294,7 +314,7 @@ local function quit_obs()
     local me = ffi.C.GetCurrentProcessId()
     local main = {}
     local popups = {}
-    local callback = ffi.cast("SHADBUFFER_ENUM", function(window, param)
+    local callback = ffi.cast("SMARTBUFFER_ENUM", function(window, param)
         local id = ffi.new("unsigned long[1]")
         ffi.C.GetWindowThreadProcessId(window, id)
         if id[0] == me then
@@ -373,7 +393,7 @@ local function check_commands()
 end
 
 function script_description()
-    return "Sorts clips by game, plays a sound when one saves, and takes commands from the ShadBuffer overlay."
+    return "Sorts clips by game, plays a sound when one saves, and takes commands from the SmartBuffer overlay."
 end
 
 function script_defaults(settings)

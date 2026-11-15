@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public static class Theme
     {
@@ -660,6 +660,22 @@ namespace ShadBuffer
             set => Change(ref this.value, Math.Max(0, Math.Min(1, value)));
         }
 
+        private double rangeStart;
+        private double rangeEnd = 1;
+
+        // the part outside start..end is dimmed, for trimming
+        public void SetRange(double start, double end)
+        {
+            start = Math.Max(0, Math.Min(1, start));
+            end = Math.Max(start, Math.Min(1, end));
+            if (start != rangeStart || end != rangeEnd)
+            {
+                rangeStart = start;
+                rangeEnd = end;
+                Invalidate();
+            }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics graphics = e.Graphics;
@@ -671,6 +687,21 @@ namespace ShadBuffer
             if (filled > 0)
             {
                 Ui.FillRound(graphics, Theme.Accent, new Rectangle(track.X, track.Y, Math.Max(filled, thickness), thickness), thickness / 2);
+            }
+            if (rangeStart > 0 || rangeEnd < 1)
+            {
+                int left = track.X + (int)Math.Round(track.Width * rangeStart);
+                int right = track.X + (int)Math.Round(track.Width * rangeEnd);
+                using (var dim = new SolidBrush(Color.FromArgb(170, BackColor)))
+                {
+                    graphics.FillRectangle(dim, 0, 0, left, Height);
+                    graphics.FillRectangle(dim, right, 0, Width - right, Height);
+                }
+                using (var mark = new SolidBrush(Theme.Text))
+                {
+                    graphics.FillRectangle(mark, left, track.Y - Ui.S(5), Ui.S(2), thickness + Ui.S(10));
+                    graphics.FillRectangle(mark, Math.Min(right, Width - Ui.S(2)), track.Y - Ui.S(5), Ui.S(2), thickness + Ui.S(10));
+                }
             }
         }
 

@@ -4,7 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // the folder and clip grids, drawn by hand so a big library doesn't mean thousands of controls
     public sealed class LibraryGrid : PaintedControl

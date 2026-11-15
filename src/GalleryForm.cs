@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // the panel that floats beside the sidebar, holds the library and the settings
     public sealed class GalleryForm : Form

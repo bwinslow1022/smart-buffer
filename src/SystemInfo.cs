@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public sealed class DisplayInfo
     {

@@ -5,11 +5,11 @@
     <TargetFramework>net48</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
-    <RootNamespace>ShadBuffer</RootNamespace>
-    <AssemblyName>ShadBuffer</AssemblyName>
+    <RootNamespace>SmartBuffer</RootNamespace>
+    <AssemblyName>SmartBuffer</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.4.0</Version>
-    <Product>ShadBuffer</Product>
+    <Version>0.5.0</Version>
+    <Product>SmartBuffer</Product>
     <Description>Sets up OBS as an always-on clip recorder</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <DebugType>none</DebugType>
@@ -17,13 +17,15 @@
 
   <ItemGroup>
     <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="WindowsBase" />
     <Reference Include="WindowsFormsIntegration" />
     <Reference Include="System.Xaml" />
-    <EmbeddedResource Include="assets\shadbuffer.lua" LogicalName="shadbuffer.lua" />
+    <EmbeddedResource Include="assets\smartbuffer.lua" LogicalName="smartbuffer.lua" />
     <EmbeddedResource Include="assets\saved.wav" LogicalName="saved.wav" />
   </ItemGroup>
 

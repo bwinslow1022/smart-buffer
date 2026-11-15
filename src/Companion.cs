@@ -10,13 +10,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // stays in the tray, listens for the overlay hotkey and watches obs
     public sealed class Companion : ApplicationContext
     {
-        private const string MutexName = @"Local\ShadBuffer.Companion";
-        private const string QuitEventName = @"Local\ShadBuffer.Quit";
+        private const string MutexName = @"Local\SmartBuffer.Companion";
+        private const string QuitEventName = @"Local\SmartBuffer.Quit";
         private const int OverlayHotkeyId = 1;
         private const int TestHotkeyId = 2;
         private const int RecordHotkeyId = 3;
@@ -31,6 +31,9 @@ namespace ShadBuffer
         private readonly NotifyIcon tray;
         private readonly HotkeyWindow window;
         private readonly System.Windows.Forms.Timer timer;
+        private readonly System.Windows.Forms.Timer saveTimer;
+        private DateTime statusWritten;
+        private int lastSaved = -1;
         private readonly EventWaitHandle quitEvent;
         private readonly Icon iconOn = MakeIcon(Color.FromArgb(235, 64, 64));
         private readonly Icon iconOff = MakeIcon(Color.FromArgb(120, 120, 128));
@@ -69,6 +72,11 @@ namespace ShadBuffer
             timer = new System.Windows.Forms.Timer { Interval = 1000 };
             timer.Tick += (_, __) => Tick();
             timer.Start();
+
+            // separate fast check so the saved card shows within a moment of the clip being written
+            saveTimer = new System.Windows.Forms.Timer { Interval = 150 };
+            saveTimer.Tick += (_, __) => CheckSaved();
+            saveTimer.Start();
         }
 
         public static int Run(Context ctx, bool atLogin)
@@ -210,7 +218,7 @@ namespace ShadBuffer
                 await Task.Delay(SaveDelayMs);
                 if (!ObsControl.Send(ctx, ObsControl.Save))
                 {
-                    tray.ShowBalloonTip(3000, Context.AppName, "Couldn't save a clip because OBS isn't recording on the ShadBuffer profile.", ToolTipIcon.Warning);
+                    tray.ShowBalloonTip(3000, Context.AppName, "Couldn't save a clip because OBS isn't recording on the Smart Buffer profile.", ToolTipIcon.Warning);
                 }
             });
         }
@@ -409,6 +417,51 @@ namespace ShadBuffer
             if (job.State == UploadState.Done && overlay == null)
             {
                 tray.ShowBalloonTip(5000, Context.AppName, "Your upload is ready. Open the overlay to copy the link.", ToolTipIcon.Info);
+            }
+        }
+
+        private void CheckSaved()
+        {
+            DateTime written;
+            try
+            {
+                written = File.GetLastWriteTimeUtc(ctx.StatusPath);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            if (written == statusWritten)
+            {
+                return;
+            }
+            statusWritten = written;
+            ObsStatus status = ObsControl.ReadStatus(ctx);
+            if (status.Saved < 0)
+            {
+                return;
+            }
+            // the first read and an obs restart (count back to 0) only set the baseline
+            bool isNew = lastSaved >= 0 && status.Saved > lastSaved;
+            lastSaved = status.Saved;
+            if (!isNew || !Settings.Load(ctx).SaveNotification)
+            {
+                return;
+            }
+            string where = string.IsNullOrEmpty(status.SavedGame) ? "" : status.SavedGame;
+            switch (status.SavedKind)
+            {
+                case "recording":
+                    SaveToast.Show("Recording saved", where, Icons.Video);
+                    break;
+                case "screenshot":
+                    SaveToast.Show("Screenshot saved", where, Icons.Camera);
+                    break;
+                default:
+                    int seconds = Settings.Load(ctx).ClipSeconds;
+                    string length = seconds % 60 == 0 ? $"last {seconds / 60} min" : $"last {seconds} s";
+                    SaveToast.Show("Clip saved", string.IsNullOrEmpty(where) ? length : $"{where} \u00b7 {length}", Icons.Film);
+                    break;
             }
         }
 

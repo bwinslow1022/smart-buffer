@@ -3,7 +3,7 @@ using System.IO;
 using System.Security.Principal;
 using Microsoft.Win32;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public static class WindowsTweaks
     {
@@ -85,7 +85,7 @@ namespace ShadBuffer
             dynamic shell = Activator.CreateInstance(shellType);
             dynamic link = shell.CreateShortcut(StartMenuShortcut());
             link.TargetPath = exe;
-            link.Description = "Set up or remove ShadBuffer";
+            link.Description = "Set up or remove Smart Buffer";
             link.Save();
         }
 

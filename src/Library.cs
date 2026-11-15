@@ -4,7 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public enum LibraryKind
     {

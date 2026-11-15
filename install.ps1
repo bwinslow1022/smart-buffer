@@ -2,12 +2,12 @@
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$url = 'https://github.com/seandotnet/ShadBuffer/releases/latest/download/ShadBuffer.exe'
-$dir = Join-Path $env:TEMP ("shadbuffer-" + [guid]::NewGuid())
+$url = 'https://github.com/bwinslow1022/smart-buffer/releases/latest/download/SmartBuffer.exe'
+$dir = Join-Path $env:TEMP ("smartbuffer-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $dir | Out-Null
 
 try {
-    $exe = Join-Path $dir 'ShadBuffer.exe'
+    $exe = Join-Path $dir 'SmartBuffer.exe'
     Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
     Start-Process -FilePath $exe -ArgumentList '--setup' -Wait
 }

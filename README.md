@@ -1,27 +1,18 @@
 <div align="center">
 
-# ShadBuffer
+# Smart Buffer
 
-**Open-source instant replay for Windows, powered by OBS Studio.**
+**Instant replay for Windows, powered by OBS Studio.**
 
-A free alternative to NVIDIA ShadowPlay / Instant Replay that sets itself up in one click.
+A free alternative to NVIDIA ShadowPlay / Instant Replay that sets itself up in one click and never turns itself off.
 
-[![Latest release](https://img.shields.io/github/v/release/seandotnet/ShadBuffer?label=release&color=6d5ef5)](https://github.com/seandotnet/ShadBuffer/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/seandotnet/ShadBuffer/total?color=6d5ef5)](https://github.com/seandotnet/ShadBuffer/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-6d5ef5)](LICENSE)
-![Windows 10 and 11](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
-
-![](https://dcbadge.limes.pink/api/shield/1474314300158902314) [![](https://dcbadge.limes.pink/api/server/QJcDHybHyu)](https://discord.gg/QJcDHybHyu)
-
-<img width="1350" height="720" alt="ShadBuffer overlay with the clips library open" src="https://github.com/user-attachments/assets/99b93330-f64c-4eab-85e7-7d8076d31009" />
-
-[Download](https://github.com/seandotnet/ShadBuffer/releases/latest) &nbsp;&bull;&nbsp; [Install](#install) &nbsp;&bull;&nbsp; [Features](#features) &nbsp;&bull;&nbsp; [Hotkeys](#hotkeys) &nbsp;&bull;&nbsp; [Discord](https://discord.gg/QJcDHybHyu)
+[Download](https://github.com/bwinslow1022/smart-buffer/releases/latest) &nbsp;&bull;&nbsp; [Install](#install) &nbsp;&bull;&nbsp; [Features](#features) &nbsp;&bull;&nbsp; [Hotkeys](#hotkeys)
 
 </div>
 
 ## About
 
-ShadowPlay kept turning itself off on me because of DRM errors, so I built a replacement on top of OBS Studio. ShadBuffer configures OBS to keep a rolling replay buffer in the background, so you can save the last few minutes of gameplay with a single hotkey. An overlay lets you record, take screenshots, browse your clips and share them without ever opening OBS.
+NVIDIA Instant Replay turns itself off whenever it sees protected video, after driver updates and after resolution changes. Smart Buffer configures OBS to keep a rolling replay buffer in the background, so you can save the last few minutes of gameplay with a single hotkey. An overlay lets you record, take screenshots, browse your clips and share them without ever opening OBS.
 
 ## Features
 
@@ -30,7 +21,10 @@ ShadowPlay kept turning itself off on me because of DRM errors, so I built a rep
 - **Screenshots** are saved next to your clips with one key.
 - **Overlay** opens a sidebar with Instant Replay, recording, screenshot and microphone controls.
 - **Clip library** sorts clips and recordings into a folder per game, with thumbnails, sorting by date or size, and a built-in player.
-- **Sharing** lets you copy the video file, or upload it to kappa.lol and get a link you can paste anywhere.
+- **Share copies** trim a clip and squeeze it under a size limit (10, 20, 25, 50 or 100 MB) so it uploads to Discord without Nitro. The copy lands on your clipboard, ready to paste.
+- **Saved notification** shows a small "Clip saved" card in the corner of the screen you're playing on, like ShadowPlay. It never takes focus from the game.
+- **ShadowPlay-style bitrates** (12, 20 or 35 Mbps) for predictable file sizes, or constant-quality modes.
+- **Sharing** also lets you copy the original video file, or upload it to kappa.lol and get a link you can paste anywhere.
 - **Microphone control** with device selection, an on/off toggle that works without restarting OBS, and optional RNNoise or Speex noise suppression.
 - **Game or desktop capture**, with desktop capture available for games with strict anti-cheat.
 - **Hardware encoding** on NVIDIA, AMD and Intel, using H.264, HEVC or AV1 when your GPU supports it.
@@ -38,13 +32,13 @@ ShadowPlay kept turning itself off on me because of DRM errors, so I built a rep
 
 ## Install
 
-1. Download `ShadBuffer.exe` from the [latest release](https://github.com/seandotnet/ShadBuffer/releases/latest).
+1. Download `SmartBuffer.exe` from the [latest release](https://github.com/bwinslow1022/smart-buffer/releases/latest).
 2. Run it, click **Set up** and accept the admin prompt.
 
 Or run this in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/seandotnet/ShadBuffer/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/bwinslow1022/smart-buffer/main/install.ps1 | iex
 ```
 
 > [!NOTE]
@@ -63,7 +57,7 @@ irm https://raw.githubusercontent.com/seandotnet/ShadBuffer/main/install.ps1 | i
 | Turn Instant Replay on or off | <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>F10</kbd> |
 | Turn the microphone on or off | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> |
 
-All hotkeys can be changed in **Settings > Hotkeys**. While ShadBuffer is running these combinations belong to it, so a game that uses one of them won't receive it. Press <kbd>Delete</kbd> in a hotkey box to turn that hotkey off.
+All hotkeys can be changed in **Settings > Hotkeys**. While Smart Buffer is running these combinations belong to it, so a game that uses one of them won't receive it. Press <kbd>Delete</kbd> in a hotkey box to turn that hotkey off.
 
 ## Where your files go
 
@@ -76,6 +70,10 @@ All hotkeys can be changed in **Settings > Hotkeys**. While ShadBuffer is runnin
 Both folders can be changed in **Settings > Clips**, along with clip length and sorting by game.
 
 ## Sharing clips
+
+**Make share copy** (in the clip player) trims the clip to the start and end you pick, then re-encodes it to fit the size you choose. Lower limits and longer clips get a lower resolution, because that looks better than a blocky full-size picture. On NVIDIA GPUs it encodes on the GPU, so a 2 minute clip takes about 10 seconds. "Full quality (trim only)" cuts without re-encoding and is instant.
+
+The first time, it downloads [ffmpeg](https://ffmpeg.org) 9.0.2 (about 115 MB) from [GyanD's builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) and checks it against a pinned SHA-256 before using it.
 
 **Upload to kappa.lol** sends the clip to [kappa.lol](https://kappa.lol), a free third-party file host, and gives you a public link. Uploads only happen when you click the button.
 
@@ -97,8 +95,8 @@ Both folders can be changed in **Settings > Clips**, along with clip length and 
 - **Anti-cheat:** game capture hooks into fullscreen games, so some anti-cheats may block it or object. Switch to desktop capture in settings for games like Valorant, CS2 or FACEIT, since it doesn't touch the game. The overlay itself is a normal window and never injects into games.
 - **Desktop capture** records the whole monitor, so notifications and the overlay can end up in clips.
 - **Microphone:** your mic is recorded by default. Turn it off from the overlay if you don't want that.
-- **DRM:** ShadBuffer doesn't get around DRM. Protected video should show up black in clips.
-- **Crash recovery:** if OBS crashes, ShadBuffer skips the safe mode question so recording comes back on its own. This also means you won't be offered safe mode if a plugin keeps crashing OBS.
+- **DRM:** Smart Buffer doesn't get around DRM. Protected video should show up black in clips.
+- **Crash recovery:** if OBS crashes, Smart Buffer skips the safe mode question so recording comes back on its own. This also means you won't be offered safe mode if a plugin keeps crashing OBS.
 - **Old OBS plugins:** an outdated plugin can make OBS show a plugin load error when it starts. Just click OK.
 - **GPU support:** only tested on NVIDIA so far. AMD and Intel should work, but haven't been tested yet.
 
@@ -107,21 +105,15 @@ Both folders can be changed in **Settings > Clips**, along with clip length and 
 Requires the [.NET SDK](https://dotnet.microsoft.com/download). The app targets .NET Framework 4.8, which is built into Windows.
 
 ```powershell
-dotnet build ShadBuffer.csproj -c Release
+dotnet build SmartBuffer.csproj -c Release
 ```
 
-The exe is written to `bin\Release\net48\ShadBuffer.exe`.
+The exe is written to `bin\Release\net48\SmartBuffer.exe`.
 
-## Star History
+## Credits
 
-<a href="https://www.star-history.com/">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=seandotnet/shadbuffer&type=date&theme=dark&legend=bottom-right" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=seandotnet/shadbuffer&type=date&legend=bottom-right" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=seandotnet/shadbuffer&type=date&legend=bottom-right" />
- </picture>
-</a>
+Smart Buffer is a fork of [ShadBuffer](https://github.com/seandotnet/ShadBuffer) by seandotnet, used under the MIT license. It adds share copies sized for Discord, a saved notification, fixed-bitrate presets, a modern folder picker and other changes.
 
 ## License
 
-[MIT](LICENSE). ShadBuffer is not affiliated with or endorsed by the OBS Project or NVIDIA.
+[MIT](LICENSE). Smart Buffer is not affiliated with or endorsed by the OBS Project or NVIDIA.

@@ -4,7 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // a normal solid window that only exists while it's open, it never touches the game
     public sealed class OverlayForm : Form
@@ -454,7 +454,7 @@ namespace ShadBuffer
             }
             if (!status.ScriptRunning)
             {
-                return Obs.VisiblePopup(ctx) != null ? "OBS is waiting on a popup." : "OBS is on another profile, so ShadBuffer can't control it.";
+                return Obs.VisiblePopup(ctx) != null ? "OBS is waiting on a popup." : "OBS is on another profile, so Smart Buffer can't control it.";
             }
             return "";
         }

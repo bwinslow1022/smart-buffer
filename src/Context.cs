@@ -1,11 +1,11 @@
 using System;
 using System.IO;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public sealed class Context
     {
-        public const string AppName = "ShadBuffer";
+        public const string AppName = "Smart Buffer";
 
         public string ConfigDir { get; set; }
         public string AppDir { get; set; }
@@ -20,7 +20,7 @@ namespace ShadBuffer
         public string CommandPath => Path.Combine(AppDir, "command.txt");
         public string StatusPath => Path.Combine(AppDir, "status.txt");
         public string UploadsPath => Path.Combine(AppDir, "uploads.json");
-        public string ScriptPath => Path.Combine(AppDir, "shadbuffer.lua");
+        public string ScriptPath => Path.Combine(AppDir, "smartbuffer.lua");
         public string SoundPath => Path.Combine(AppDir, "saved.wav");
         public string LogPath => Path.Combine(AppDir, "setup.log");
         public string InstalledExe => Path.Combine(AppDir, AppName + ".exe");
@@ -46,7 +46,7 @@ namespace ShadBuffer
             {
                 SandboxObsRoot = obsRoot,
                 ConfigDir = Path.Combine(obsRoot, "config", "obs-studio"),
-                AppDir = Path.Combine(obsRoot, "shadbuffer-app"),
+                AppDir = Path.Combine(obsRoot, "smartbuffer-app"),
                 ClipsDir = Path.Combine(obsRoot, "clips"),
                 RecordingsDir = Path.Combine(obsRoot, "recordings"),
             };

@@ -6,7 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // windows forms has no video player, so this one comes from wpf, which ships with the framework
     public sealed class VideoHost : ElementHost

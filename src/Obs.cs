@@ -8,12 +8,12 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public static class Obs
     {
         public static readonly Version MinVersion = new Version(31, 0);
-        public const string LaunchArgs = "--profile \"ShadBuffer\" --collection \"ShadBuffer\" --startreplaybuffer --minimize-to-tray";
+        public const string LaunchArgs = "--profile \"" + Context.AppName + "\" --collection \"" + Context.AppName + "\" --startreplaybuffer --minimize-to-tray";
 
         private const uint WmClose = 0x0010;
         private const int CloseRetryMs = 1000;

@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public enum UploadState
     {
@@ -147,7 +147,7 @@ namespace ShadBuffer
         {
             UseModernTls();
 
-            string boundary = "shadbuffer" + Guid.NewGuid().ToString("N");
+            string boundary = "smartbuffer" + Guid.NewGuid().ToString("N");
             // the host keeps the upload's name, and mine has the game in it, so this one stays generic
             string extension = Path.GetExtension(job.Path);
             string fileName = "clip" + extension;
@@ -267,7 +267,7 @@ namespace ShadBuffer
             var request = (HttpWebRequest)WebRequest.Create(apiUrl + route);
             request.Timeout = RequestTimeoutMs;
             request.ReadWriteTimeout = ReadWriteTimeoutMs;
-            request.UserAgent = Context.AppName + "/" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+            request.UserAgent = "SmartBuffer/" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
             return request;
         }
 

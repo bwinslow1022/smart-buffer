@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public sealed class EncoderChoice
     {
@@ -81,7 +81,28 @@ namespace ShadBuffer
             return ParseSections(output).Values.Any(section => Is(section, key));
         }
 
+        // Settings.Quality above this is a fixed bitrate in kbps (like ShadowPlay), below it a constant-quality level
+        public const int BitrateThreshold = 100;
+
         public static EncoderChoice Build(string brand, bool hevc, bool av1, string codec, int quality)
+        {
+            EncoderChoice choice = BuildQuality(brand, hevc, av1, codec, quality);
+            if (quality > BitrateThreshold)
+            {
+                // constant bitrate gives predictable file sizes: kbps / 8 * seconds
+                choice.Settings.Remove("cqp");
+                choice.Settings.Remove("crf");
+                choice.Settings["rate_control"] = "CBR";
+                choice.Settings["bitrate"] = quality;
+                if (choice.Id.StartsWith("obs_nvenc"))
+                {
+                    choice.Settings["multipass"] = "qres"; // cheap two-pass, noticeably sharper at a fixed bitrate
+                }
+            }
+            return choice;
+        }
+
+        private static EncoderChoice BuildQuality(string brand, bool hevc, bool av1, string codec, int quality)
         {
             if (codec == CodecCpu || brand == BrandCpu)
             {

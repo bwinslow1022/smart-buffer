@@ -4,10 +4,11 @@ using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     // the preview page: video and scrub bar on the left, file details and actions on the right
     public sealed class PlayerPanel : Panel
@@ -46,6 +47,27 @@ namespace ShadBuffer
         private readonly ActionButton folderButton = new ActionButton("Show in folder", Icons.Folder);
         private readonly ActionButton copyButton = new ActionButton("Copy", Icons.Copy, false, FileHint);
         private readonly Panel rule = new Panel { BackColor = Theme.Border };
+
+        private readonly Label shareTitle = NewLabel(14, Theme.Text);
+        private readonly ActionButton startButton = new ActionButton("Start 0:00");
+        private readonly ActionButton endButton = new ActionButton("End");
+        private readonly Label trimHint = NewLabel(12.5F, Theme.Muted);
+        private readonly FlatCombo sizeCombo = new FlatCombo();
+        private readonly ActionButton shareButton = new ActionButton("Make share copy", Icons.Film, true);
+        private readonly Label shareStatus = NewLabel(12.5F, Theme.Muted);
+        private readonly Panel shareRule = new Panel { BackColor = Theme.Border };
+        private static readonly Choice[] SizeChoices =
+        {
+            new Choice("Under 10 MB", 10),
+            new Choice("Under 20 MB", 20),
+            new Choice("Under 25 MB", 25),
+            new Choice("Under 50 MB", 50),
+            new Choice("Under 100 MB", 100),
+            new Choice("Full quality (trim only)", 0),
+        };
+        private TimeSpan trimStart;
+        private TimeSpan? trimEnd;
+        private bool sharing;
 
         private readonly Label uploadTitle = NewLabel(14, Theme.Text);
         private readonly Label uploadRight = NewLabel(13, Theme.Text);
@@ -122,6 +144,22 @@ namespace ShadBuffer
                 side.Controls.Add(right);
             }
             uploadTitle.Font = Ui.Strong(14);
+            shareTitle.Font = Ui.Strong(14);
+            shareTitle.Text = "Share a smaller copy";
+            trimHint.Text = "Pause where it should start or end, then click.";
+            sizeCombo.Items.AddRange(SizeChoices);
+            int limit = Settings.Load(ctx).ShareLimitMb;
+            sizeCombo.SelectedIndex = Math.Max(0, Array.FindIndex(SizeChoices, c => Equals(c.Value, limit)));
+            sizeCombo.SelectedIndexChanged += (_, __) =>
+            {
+                Settings saved = Settings.Load(ctx);
+                saved.ShareLimitMb = (int)((Choice)sizeCombo.SelectedItem).Value;
+                saved.Save(ctx);
+            };
+            startButton.Click += (_, __) => SetTrim(true);
+            endButton.Click += (_, __) => SetTrim(false);
+            shareButton.Click += (_, __) => MakeShareCopy();
+            side.Controls.AddRange(new Control[] { shareTitle, startButton, endButton, trimHint, sizeCombo, shareButton, shareStatus, shareRule });
             side.Controls.AddRange(new Control[]
             {
                 folderButton, copyButton, rule, uploadTitle, uploadRight, uploadBar, uploadDetail, uploadError, linkBox, uploadButton, deleteButton, cancelButton, uploadFine,
@@ -158,7 +196,7 @@ namespace ShadBuffer
                 video = new VideoHost { Dock = DockStyle.Fill };
                 video.Clicked += OnVideoClicked;
                 video.Finished += UpdatePlayState;
-                video.Opened += UpdateClock;
+                video.Opened += () => { UpdateClock(); UpdateTrim(); };
                 video.KeyPressed += OnVideoKey;
                 frame.Padding = new Padding(1);
                 frame.Controls.Add(video);
@@ -166,6 +204,13 @@ namespace ShadBuffer
 
             video.Load(file.Path);
             scrub.Value = 0;
+            trimStart = TimeSpan.Zero;
+            trimEnd = null;
+            if (!sharing)
+            {
+                shareStatus.Text = "";
+            }
+            UpdateTrim();
             copyReset.Stop();
             copyButton.Hint = FileHint;
             strip.Set(files, file);
@@ -272,6 +317,24 @@ namespace ShadBuffer
             y += Ui.S(52);
             copyButton.SetBounds(0, y, width, Ui.S(44));
             y += Ui.S(60);
+
+            shareRule.SetBounds(0, y, width, 1);
+            y += Ui.S(14);
+            shareTitle.SetBounds(0, y, width, Ui.S(22));
+            y += Ui.S(28);
+            int half = (width - Ui.S(8)) / 2;
+            startButton.SetBounds(0, y, half, Ui.S(36));
+            endButton.SetBounds(half + Ui.S(8), y, width - half - Ui.S(8), Ui.S(36));
+            y += Ui.S(40);
+            trimHint.SetBounds(0, y, width, Ui.S(18));
+            y += Ui.S(24);
+            sizeCombo.SetBounds(0, y, width, Ui.S(30));
+            y += Ui.S(38);
+            shareButton.SetBounds(0, y, width, Ui.S(44));
+            y += Ui.S(48);
+            int statusHeight = string.IsNullOrEmpty(shareStatus.Text) ? 0 : TextRenderer.MeasureText(shareStatus.Text, shareStatus.Font, new Size(width, 0), TextFormatFlags.WordBreak).Height;
+            shareStatus.SetBounds(0, y, width, statusHeight + 2);
+            y += statusHeight + Ui.S(14);
             rule.SetBounds(0, y, width, 1);
             y += Ui.S(14);
 
@@ -321,6 +384,89 @@ namespace ShadBuffer
             uploadFine.SetBounds(0, y, width, fineHeight + 2);
         }
 
+        // the preview can fail (an AV1 clip without Windows' AV1 extension), the file's own length still works
+        private TimeSpan ClipLength => video != null && video.Length > TimeSpan.Zero ? video.Length : (file != null ? cache.Get(file.Path)?.Length : null) ?? TimeSpan.Zero;
+        private TimeSpan TrimEnd => trimEnd ?? ClipLength;
+
+        private void SetTrim(bool start)
+        {
+            if (video == null || video.Length <= TimeSpan.Zero)
+            {
+                shareStatus.Text = "The preview can't play this clip, so trimming isn't available. Making a copy still works for the whole clip.";
+                LayoutSide();
+                return;
+            }
+            TimeSpan at = video.Position;
+            if (start)
+            {
+                trimStart = at < TrimEnd ? at : TimeSpan.Zero;
+            }
+            else
+            {
+                trimEnd = at > trimStart ? at : (TimeSpan?)null;
+            }
+            UpdateTrim();
+        }
+
+        private void UpdateTrim()
+        {
+            TimeSpan length = ClipLength;
+            startButton.Label = "Start " + Library.LengthText(trimStart);
+            endButton.Label = "End " + (length > TimeSpan.Zero ? Library.LengthText(TrimEnd) : "-");
+            scrub.SetRange(length.Ticks > 0 ? (double)trimStart.Ticks / length.Ticks : 0, length.Ticks > 0 ? (double)TrimEnd.Ticks / length.Ticks : 1);
+        }
+
+        private void MakeShareCopy()
+        {
+            if (sharing || file == null || video == null)
+            {
+                return;
+            }
+            if (ClipLength <= TimeSpan.Zero)
+            {
+                shareStatus.Text = "Still reading this clip's length, try again in a second.";
+                LayoutSide();
+                return;
+            }
+            video.Pause();
+            UpdatePlayState();
+            sharing = true;
+            shareButton.Enabled = false;
+            string source = file.Path;
+            TimeSpan start = trimStart, end = TrimEnd;
+            int limit = (int)((Choice)sizeCombo.SelectedItem).Value;
+            Action<string> status = text => BeginInvoke((Action)(() =>
+            {
+                shareStatus.Text = text;
+                shareStatus.ForeColor = Theme.Muted;
+                LayoutSide();
+            }));
+            Task.Run(() =>
+            {
+                ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
+                return ShareEncoder.Make(ctx, source, start, end, limit, p => status($"Making the copy... {p:P0}"));
+            }).ContinueWith(task => BeginInvoke((Action)(() =>
+            {
+                sharing = false;
+                shareButton.Enabled = true;
+                if (task.IsFaulted)
+                {
+                    Exception error = task.Exception.GetBaseException();
+                    shareStatus.Text = error is SetupException ? error.Message : "Something went wrong: " + error.Message;
+                    shareStatus.ForeColor = Theme.ErrorText;
+                }
+                else
+                {
+                    string made = task.Result;
+                    bool copied = TryCopy(() => Clipboard.SetFileDropList(new StringCollection { made }));
+                    shareStatus.Text = $"{Path.GetFileName(made)}, {Library.SizeText(new FileInfo(made).Length)}. "
+                        + (copied ? "Copied, paste it in Discord." : "Saved next to the clip.");
+                    shareStatus.ForeColor = Theme.Text;
+                }
+                LayoutSide();
+            })));
+        }
+
         private void UpdateDetails()
         {
             if (file == null)
@@ -332,6 +478,7 @@ namespace ShadBuffer
             values[1].Text = Library.SizeText(file.Size);
             values[2].Text = info?.Length != null ? Library.LengthText(info.Length.Value) : "-";
             values[3].Text = info?.VideoText() ?? "-";
+            UpdateTrim();
             strip.Invalidate();
         }
 
@@ -358,6 +505,7 @@ namespace ShadBuffer
             if (clock.Text != text)
             {
                 clock.Text = text;
+                UpdateTrim(); // the length can arrive after the video reports it opened
             }
         }
 

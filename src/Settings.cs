@@ -1,7 +1,7 @@
 using System.IO;
 using System.Web.Script.Serialization;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public sealed class Settings
     {
@@ -23,6 +23,8 @@ namespace ShadBuffer
         public string ClipsDir { get; set; }
         public string RecordingsDir { get; set; }
         public bool SaveSound { get; set; } = true;
+        public bool SaveNotification { get; set; } = true;
+        public int ShareLimitMb { get; set; } = 20;
         public bool SortByGame { get; set; } = true;
 
         public string Capture { get; set; } = CaptureGame;
@@ -83,6 +85,7 @@ namespace ShadBuffer
             ReplayEnabled = from.ReplayEnabled;
             RecordMic = from.RecordMic;
             KappaNoticeSeen = from.KappaNoticeSeen;
+            ShareLimitMb = from.ShareLimitMb;
         }
 
         public bool SameAs(Settings other)
@@ -100,6 +103,7 @@ namespace ShadBuffer
             a.CopyLiveValues(b);
             a.StartAtLogin = b.StartAtLogin;
             a.GameBarOff = b.GameBarOff;
+            a.SaveNotification = b.SaveNotification; // the tray app shows it, obs never reads it
             a.OverlayHotkey = b.OverlayHotkey;
             a.RecordHotkey = b.RecordHotkey;
             a.ScreenshotHotkey = b.ScreenshotHotkey;

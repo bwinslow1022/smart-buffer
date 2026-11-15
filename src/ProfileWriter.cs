@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Web.Script.Serialization;
 
-namespace ShadBuffer
+namespace SmartBuffer
 {
     public static class ProfileWriter
     {
@@ -55,9 +55,9 @@ RecAudioEncoder=ffmpeg_aac
 RecRB=true
 RecRBTime={settings.ClipSeconds}
 RecRBSize={memoryMb}
-Track1Bitrate=160
-Track2Bitrate=160
-Track3Bitrate=160
+Track1Bitrate=192
+Track2Bitrate=192
+Track3Bitrate=192
 Track1Name=Mix
 Track2Name=Desktop
 Track3Name=Mic
@@ -191,7 +191,7 @@ ReplayBuffer={hotkey.ToObsJson()}
         public static void WriteAssets(Context ctx)
         {
             Directory.CreateDirectory(ctx.AppDir);
-            CopyResource("shadbuffer.lua", ctx.ScriptPath);
+            CopyResource("smartbuffer.lua", ctx.ScriptPath);
             CopyResource("saved.wav", ctx.SoundPath);
         }
 
