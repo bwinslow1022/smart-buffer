@@ -33,6 +33,88 @@ namespace SmartBuffer
             }
         }
 
+        /// Downloads the official portable OBS into root (no admin needed) and checks it's signed by OBS.
+        public static void EnsurePortable(string root, Action<string> report)
+        {
+            if (File.Exists(Obs.ExePath(root)) && Obs.IsOwnCopy(root))
+            {
+                return;
+            }
+            string work = root + ".download";
+            if (Directory.Exists(work))
+            {
+                Directory.Delete(work, true);
+            }
+            Directory.CreateDirectory(work);
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+                Dictionary<string, object> asset;
+                string zip = Path.Combine(work, "obs.zip");
+                using (var web = new WebClient())
+                {
+                    web.Headers[HttpRequestHeader.UserAgent] = "SmartBuffer-setup";
+                    var release = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(web.DownloadString(ReleaseApi));
+                    asset = ((IEnumerable)release["assets"]).Cast<Dictionary<string, object>>().FirstOrDefault(a => IsPortableZip((string)a["name"]));
+                    if (asset == null)
+                    {
+                        throw new SetupException("Couldn't find the portable OBS in its latest release.");
+                    }
+                    report("Downloading a separate copy of OBS (about 225 MB)");
+                    web.Headers[HttpRequestHeader.UserAgent] = "SmartBuffer-setup";
+                    web.DownloadFile((string)asset["browser_download_url"], zip);
+                }
+                // github publishes a sha256 for each release file
+                if (asset.TryGetValue("digest", out object digest) && digest is string text && text.StartsWith("sha256:"))
+                {
+                    string actual;
+                    using (var sha = System.Security.Cryptography.SHA256.Create())
+                    using (FileStream stream = File.OpenRead(zip))
+                    {
+                        actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
+                    }
+                    if (!string.Equals(actual, text.Substring(7), StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new SetupException("The OBS download didn't match its checksum, so it wasn't used.");
+                    }
+                }
+                report("Unpacking OBS");
+                string staging = Path.Combine(work, "obs");
+                System.IO.Compression.ZipFile.ExtractToDirectory(zip, staging);
+                if (!IsSignedByObs(Obs.ExePath(staging)))
+                {
+                    throw new SetupException("The downloaded OBS wasn't signed by OBS, so it wasn't used.");
+                }
+                File.WriteAllText(Path.Combine(staging, Obs.OwnMarker), "This copy of OBS belongs to Smart Buffer. Removing Smart Buffer deletes it.");
+                // a previous broken copy keeps its settings
+                string oldConfig = Path.Combine(root, "config");
+                if (Directory.Exists(oldConfig))
+                {
+                    Directory.Move(oldConfig, Path.Combine(staging, "config"));
+                }
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+                Directory.Move(staging, root);
+            }
+            finally
+            {
+                try
+                {
+                    Directory.Delete(work, true);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+
+        public static bool IsPortableZip(string name)
+        {
+            return name.EndsWith("-Windows-x64.zip", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static string DownloadInstaller(string folder)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;

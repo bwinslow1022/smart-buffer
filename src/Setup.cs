@@ -30,6 +30,17 @@ namespace SmartBuffer
             State state = State.Load(ctx);
             Settings settings = Settings.Load(ctx);
 
+            if (state.SeparateObs && !ctx.HasOwnObs)
+            {
+                ctx.UseOwnObs();
+            }
+            if (ctx.HasOwnObs)
+            {
+                ctx.Report("Getting Smart Buffer's own copy of OBS");
+                ObsInstaller.EnsurePortable(ctx.OwnObsRoot, ctx.Report);
+                settings.RunAsAdmin = false;
+            }
+
             ctx.Report("Checking OBS");
             bool closeObs = AskToCloseObs(ctx, confirm);
 
@@ -129,14 +140,82 @@ namespace SmartBuffer
             {
                 DeleteFile(file);
             }
+            if (ctx.HasOwnObs)
+            {
+                ctx.Report("Deleting Smart Buffer's copy of OBS");
+                try
+                {
+                    Directory.Delete(ctx.OwnObsRoot, true);
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                {
+                    ctx.Log("Couldn't delete the OBS copy: " + e.Message);
+                }
+            }
             if (!ctx.IsSandbox)
             {
                 DeleteInstalledExe(ctx);
             }
 
-            string message = "Removed. Your clips, OBS itself and your other profiles were left alone.";
+            string message = ctx.HasOwnObs
+                ? "Removed. Your clips and your own OBS were left alone."
+                : "Removed. Your clips, OBS itself and your other profiles were left alone.";
             ctx.Report(message);
             return message;
+        }
+
+        /// Called before the first setup. Separate mode gets its own OBS, so it starts on desktop capture
+        /// (two OBS instances hooking the same game can fight) and never as admin.
+        public static void ChooseMode(Context ctx, bool separate)
+        {
+            State state = State.Load(ctx);
+            state.SeparateObs = separate;
+            state.Save(ctx);
+            if (separate)
+            {
+                ctx.UseOwnObs();
+                Settings settings = Settings.Load(ctx);
+                settings.Capture = Settings.CaptureDesktop;
+                settings.RunAsAdmin = false;
+                settings.Save(ctx);
+            }
+        }
+
+        /// True when the normal OBS already has a scene collection with real sources in it, i.e. someone streams or records with it.
+        public static bool HasExistingObsSetup()
+        {
+            string scenes = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "obs-studio", "basic", "scenes");
+            if (!Directory.Exists(scenes))
+            {
+                return false;
+            }
+            foreach (string file in Directory.GetFiles(scenes, "*.json"))
+            {
+                if (Path.GetFileNameWithoutExtension(file) == Context.AppName)
+                {
+                    continue;
+                }
+                try
+                {
+                    var data = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue }
+                        .Deserialize<System.Collections.Generic.Dictionary<string, object>>(File.ReadAllText(file));
+                    if (data.TryGetValue("sources", out object sources) && sources is System.Collections.ArrayList list)
+                    {
+                        foreach (object source in list)
+                        {
+                            if (source is System.Collections.Generic.Dictionary<string, object> s && s.TryGetValue("id", out object id) && (string)id != "scene")
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // an unreadable collection says nothing either way
+                }
+            }
+            return false;
         }
 
         public static bool IsInstalled(Context ctx)

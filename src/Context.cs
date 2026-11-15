@@ -12,6 +12,10 @@ namespace SmartBuffer
         public string ClipsDir { get; set; }
         public string RecordingsDir { get; set; }
         public string SandboxObsRoot { get; set; }
+        // separate mode: Smart Buffer runs its own portable OBS so an existing OBS setup is never touched
+        public string OwnObsRoot { get; set; }
+        public bool HasOwnObs => OwnObsRoot != null;
+        public string DefaultOwnObsRoot => Path.Combine(AppDir, "OBS");
         public Action<string> Progress { get; set; } = _ => { };
 
         public bool IsSandbox => SandboxObsRoot != null;
@@ -28,7 +32,30 @@ namespace SmartBuffer
         public string CollectionPath => Path.Combine(ConfigDir, "basic", "scenes", AppName + ".json");
         public string UserIniPath => Path.Combine(ConfigDir, "user.ini");
 
+        public void UseOwnObs()
+        {
+            OwnObsRoot = DefaultOwnObsRoot;
+            ConfigDir = Path.Combine(OwnObsRoot, "config", "obs-studio");
+        }
+
         public static Context ForThisUser()
+        {
+            Context ctx = ForThisUserShared();
+            try
+            {
+                if (State.Load(ctx).SeparateObs)
+                {
+                    ctx.UseOwnObs();
+                }
+            }
+            catch (Exception)
+            {
+                // a broken state file just means shared mode, setup rewrites it
+            }
+            return ctx;
+        }
+
+        private static Context ForThisUserShared()
         {
             return new Context
             {

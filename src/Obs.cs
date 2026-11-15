@@ -20,6 +20,20 @@ namespace SmartBuffer
         private const int PopupCloseAttempts = 5;
         private const uint QueryLimitedInformation = 0x1000;
 
+        // dropped into Smart Buffer's own OBS copy, so the elevated step and the task know to run it portable
+        public const string OwnMarker = "smartbuffer-own-obs.txt";
+
+        public static bool IsOwnCopy(string root)
+        {
+            return !string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, OwnMarker));
+        }
+
+        // --portable keeps its settings inside its own folder, --multi lets it run next to another OBS
+        public static string LaunchArgsFor(string root)
+        {
+            return (IsOwnCopy(root) ? "--portable --multi --disable-updater " : "") + LaunchArgs;
+        }
+
         public static string ExePath(string root)
         {
             return Path.Combine(root, "bin", "64bit", "obs64.exe");
@@ -30,6 +44,10 @@ namespace SmartBuffer
             if (ctx.IsSandbox)
             {
                 return ctx.SandboxObsRoot;
+            }
+            if (ctx.HasOwnObs)
+            {
+                return File.Exists(ExePath(ctx.OwnObsRoot)) ? ctx.OwnObsRoot : null;
             }
             return FindInstalledRoot();
         }
@@ -207,11 +225,13 @@ namespace SmartBuffer
         private static List<Process> Running(Context ctx)
         {
             Process[] all = Process.GetProcessesByName("obs64");
-            if (!ctx.IsSandbox)
+            // with its own copy, an OBS the user streams with is never counted, closed or controlled
+            string only = ctx.IsSandbox ? ctx.SandboxObsRoot : ctx.OwnObsRoot;
+            if (only == null)
             {
                 return all.ToList();
             }
-            return all.Where(p => IsInside(p, ctx.SandboxObsRoot)).ToList();
+            return all.Where(p => IsInside(p, only)).ToList();
         }
 
         private static bool IsInside(Process process, string root)

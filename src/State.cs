@@ -8,6 +8,7 @@ namespace SmartBuffer
     public sealed class State
     {
         public bool ProfileWritten { get; set; }
+        public bool SeparateObs { get; set; }
         public string ObsExe { get; set; }
         public string BackupDir { get; set; }
         public string EncoderBrand { get; set; }

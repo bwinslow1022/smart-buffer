@@ -21,6 +21,7 @@ namespace SmartBuffer
         private readonly Button setup;
         private readonly Button remove;
         private readonly Button clips;
+        private readonly CheckBox separate;
 
         public MainForm(Context ctx, string autoRun)
         {
@@ -31,7 +32,7 @@ namespace SmartBuffer
             Text = Context.AppName;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(480, 340);
+            ClientSize = new Size(480, 386);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -54,6 +55,20 @@ namespace SmartBuffer
                 Size = new Size(430, 44),
             });
 
+            bool installed = Setup.IsInstalled(ctx);
+            separate = new CheckBox
+            {
+                Text = "I already use OBS for streaming or recording. Give Smart Buffer its own separate copy of OBS.",
+                ForeColor = Text1,
+                Location = new Point(26, 110),
+                Size = new Size(430, 40),
+                AutoSize = false,
+                Checked = installed ? ctx.HasOwnObs : Setup.HasExistingObsSetup(),
+                Enabled = !installed,
+            };
+            separate.CheckedChanged += (_, __) => ShowIntro();
+            Controls.Add(separate);
+
             log = new TextBox
             {
                 Multiline = true,
@@ -61,24 +76,24 @@ namespace SmartBuffer
                 BorderStyle = BorderStyle.None,
                 BackColor = Panel,
                 ForeColor = Muted,
-                Location = new Point(26, 118),
-                Size = new Size(428, 136),
+                Location = new Point(26, 158),
+                Size = new Size(428, 144),
                 TabStop = false,
-                Text = "This adds a new OBS profile, starts OBS at login in the tray, and turns off Game Bar capture and the OBS exit warning. Your mic is recorded in clips. Your other OBS profiles aren't changed." + Environment.NewLine + Environment.NewLine + "Game capture hooks into fullscreen games, so some anti-cheats may block it or object. You can switch to desktop capture in settings.",
             };
             Controls.Add(log);
+            ShowIntro();
 
-            setup = NewButton(Setup.IsInstalled(ctx) ? "Set up again" : "Set up", new Point(26, 272), new Size(150, 42));
+            setup = NewButton(Setup.IsInstalled(ctx) ? "Set up again" : "Set up", new Point(26, 318), new Size(150, 42));
             setup.BackColor = Accent;
             setup.FlatAppearance.BorderSize = 0;
             setup.Font = new Font("Segoe UI Semibold", 10.5F);
             setup.Click += (_, __) => RunSetup();
 
-            clips = NewButton("Open clips", new Point(186, 272), new Size(130, 42));
+            clips = NewButton("Open clips", new Point(186, 318), new Size(130, 42));
             clips.Visible = Setup.IsInstalled(ctx);
             clips.Click += (_, __) => OpenClips();
 
-            remove = NewButton("Remove", new Point(326, 272), new Size(128, 42));
+            remove = NewButton("Remove", new Point(326, 318), new Size(128, 42));
             remove.Visible = Setup.IsInstalled(ctx);
             remove.Click += (_, __) => RunRemove();
 
@@ -114,8 +129,25 @@ namespace SmartBuffer
             return button;
         }
 
+        private void ShowIntro()
+        {
+            string nl = Environment.NewLine;
+            log.Text = separate.Checked
+                ? "Smart Buffer gets its own copy of OBS (about 225 MB download) with completely separate settings. Your OBS, its profiles, scenes, sources and settings are never touched, and both can run at the same time." + nl + nl
+                    + "It starts in the tray at login and records with desktop capture. Your mic is recorded in clips."
+                    + (Setup.IsInstalled(ctx) ? nl + nl + "To switch modes, click Remove first, then set up again." : "")
+                : "This adds a new OBS profile, starts OBS at login in the tray, and turns off Game Bar capture and the OBS exit warning. Your mic is recorded in clips. Your other OBS profiles aren't changed." + nl + nl
+                    + "Game capture hooks into fullscreen games, so some anti-cheats may block it or object. You can switch to desktop capture in settings."
+                    + (Setup.IsInstalled(ctx) ? nl + nl + "To switch modes, click Remove first, then set up again." : "");
+        }
+
         private void RunSetup()
         {
+            if (!Setup.IsInstalled(ctx))
+            {
+                Setup.ChooseMode(ctx, separate.Checked);
+            }
+            separate.Enabled = false;
             Execute(() => Setup.Install(ctx, Confirm));
         }
 

@@ -15,7 +15,7 @@ namespace SmartBuffer
         {
             string exe = SecurityElement.Escape(Obs.ExePath(obsRoot));
             string folder = SecurityElement.Escape(Path.GetDirectoryName(Obs.ExePath(obsRoot)) + "\\");
-            string args = SecurityElement.Escape(Obs.LaunchArgs);
+            string args = SecurityElement.Escape(Obs.LaunchArgsFor(obsRoot));
             string runLevel = runAsAdmin ? "HighestAvailable" : "LeastPrivilege";
 
             return $@"<?xml version=""1.0"" encoding=""UTF-16""?>

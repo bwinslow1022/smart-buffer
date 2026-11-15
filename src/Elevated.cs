@@ -29,7 +29,7 @@ namespace SmartBuffer
             File.Delete(resultFile);
 
             string sid = WindowsIdentity.GetCurrent().User.Value;
-            string args = $"{Flag} {mode} {sid} {(closeObs ? "close" : "keep")} {(settings.RunAsAdmin ? 1 : 0)} \"{resultFile}\"";
+            string args = $"{Flag} {mode} {sid} {(closeObs ? "close" : "keep")} {(settings.RunAsAdmin ? 1 : 0)} \"{resultFile}\" \"{ctx.OwnObsRoot ?? ""}\"";
             var info = new ProcessStartInfo(Assembly.GetEntryAssembly().Location, args)
             {
                 UseShellExecute = true,
@@ -63,10 +63,17 @@ namespace SmartBuffer
             bool closeObs = args[3] == "close";
             bool runAsAdmin = args[4] == "1";
             string resultFile = args[5];
+            // Smart Buffer's own portable OBS lives in a folder the user can write to, so it never runs as admin
+            string own = args.Length > 6 && Obs.IsOwnCopy(args[6]) ? args[6] : null;
+            if (own != null)
+            {
+                runAsAdmin = false;
+            }
 
             try
             {
-                var ctx = new Context();
+                var ctx = new Context { OwnObsRoot = own };
+                string root = own ?? Obs.FindInstalledRoot();
                 if (closeObs && !Obs.Close(ctx, ObsCloseTimeoutMs))
                 {
                     throw new SetupException("OBS didn't close. Close it yourself and run this again.");
@@ -74,12 +81,16 @@ namespace SmartBuffer
 
                 if (mode == ModeSetup)
                 {
-                    ObsInstaller.EnsureInstalled();
-                    StartupTask.Register(sid, Obs.FindInstalledRoot(), runAsAdmin);
+                    if (own == null)
+                    {
+                        ObsInstaller.EnsureInstalled();
+                        root = Obs.FindInstalledRoot();
+                    }
+                    StartupTask.Register(sid, root, runAsAdmin);
                 }
                 else if (mode == ModeTask)
                 {
-                    StartupTask.Register(sid, Obs.FindInstalledRoot(), runAsAdmin);
+                    StartupTask.Register(sid, root, runAsAdmin);
                 }
                 else
                 {

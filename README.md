@@ -81,7 +81,20 @@ The first time, it downloads [ffmpeg](https://ffmpeg.org) 9.0.2 (about 115 MB) f
 - Anyone with the link can watch the clip.
 - kappa.lol stores your IP address and doesn't state how long it keeps files, so use **Delete** when you're done.
 
+## Already use OBS for streaming?
+
+Tick **"I already use OBS for streaming or recording"** during setup (it's ticked for you when Smart Buffer finds an existing OBS setup). Smart Buffer then downloads its own portable copy of OBS (about 225 MB, checked against GitHub's checksum and OBS's code signature) and keeps all of its settings inside its own folder:
+
+- Your OBS, its profiles, scene collections, sources and settings are never read or changed.
+- Both run at the same time. Smart Buffer only ever starts, closes or controls its own copy.
+- It records with desktop capture, so it never competes with your OBS for game capture, and it never runs as admin.
+
+**Remove** deletes Smart Buffer's copy of OBS. Your own OBS stays exactly as it was.
+
 ## What it changes on your PC
+
+Without the separate copy, Smart Buffer uses your installed OBS:
+
 
 - Installs OBS Studio if you don't have it.
 - Adds its own OBS profile and scene collection. Your other profiles stay as they are.

@@ -218,6 +218,10 @@ namespace SmartBuffer
         {
             Settings current = Settings.Load(ctx);
             next.CopyLiveValues(current);
+            if (ctx.HasOwnObs)
+            {
+                next.RunAsAdmin = false;
+            }
             if (current.NeedsObsRestart(next) && ReadStatus(ctx).Recording)
             {
                 throw new SetupException("Stop recording first, applying these changes restarts OBS.");
