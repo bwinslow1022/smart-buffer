@@ -32,8 +32,10 @@ NVIDIA Instant Replay turns itself off whenever it sees protected video, after d
 
 ## Install
 
-1. Download `SmartBuffer.exe` from the [latest release](https://github.com/bwinslow1022/smart-buffer/releases/latest).
-2. Run it, click **Set up** and accept the admin prompt.
+1. Download `SmartBuffer-Setup.exe` from the [latest release](https://github.com/bwinslow1022/smart-buffer/releases/latest) and run it. It installs to Program Files and adds Smart Buffer to the Start menu.
+2. Leave **Open Smart Buffer** ticked at the end, click **Set up** and accept the admin prompt.
+
+If Windows shows "Windows protected your PC", click **More info** then **Run anyway**. The installer isn't code-signed yet. To uninstall, use **Settings > Apps**; it puts your OBS settings back and keeps your clips.
 
 Or run this in PowerShell:
 
@@ -121,7 +123,7 @@ Requires the [.NET SDK](https://dotnet.microsoft.com/download). The app targets 
 dotnet build SmartBuffer.csproj -c Release
 ```
 
-The exe is written to `bin\Release\net48\SmartBuffer.exe`.
+The exe is written to `bin\Release\net48\SmartBuffer.exe`. To build the installer, run [NSIS](https://nsis.sourceforge.io): `makensis -DVERSION=x.y.z installer\SmartBuffer.nsi`, which writes `bin\SmartBuffer-Setup.exe`.
 
 ## Credits
 

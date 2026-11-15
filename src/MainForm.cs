@@ -64,9 +64,18 @@ namespace SmartBuffer
                 Size = new Size(430, 40),
                 AutoSize = false,
                 Checked = installed ? ctx.HasOwnObs : Setup.HasExistingObsSetup(),
-                Enabled = !installed,
+                // locked with AutoCheck, not Enabled: a disabled checkbox ignores ForeColor and goes unreadable on dark
+                AutoCheck = !installed,
+                Cursor = installed ? Cursors.Default : Cursors.Hand,
             };
             separate.CheckedChanged += (_, __) => ShowIntro();
+            separate.Click += (_, __) =>
+            {
+                if (!separate.AutoCheck)
+                {
+                    MessageBox.Show(this, "Smart Buffer is already set up. To switch modes, click Remove first, then tick this and set up again.", Context.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            };
             Controls.Add(separate);
 
             log = new TextBox
@@ -147,7 +156,7 @@ namespace SmartBuffer
             {
                 Setup.ChooseMode(ctx, separate.Checked);
             }
-            separate.Enabled = false;
+            separate.AutoCheck = false;
             Execute(() => Setup.Install(ctx, Confirm));
         }
 
@@ -189,6 +198,8 @@ namespace SmartBuffer
             bool installed = Setup.IsInstalled(ctx);
             setup.Text = installed ? "Set up again" : "Set up";
             clips.Visible = remove.Visible = installed;
+            separate.AutoCheck = !installed;
+            separate.Cursor = installed ? Cursors.Default : Cursors.Hand;
             setup.Enabled = remove.Enabled = clips.Enabled = true;
         }
 

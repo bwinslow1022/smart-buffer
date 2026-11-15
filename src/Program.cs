@@ -22,7 +22,7 @@ namespace SmartBuffer
 
             if (args.Contains("--quiet"))
             {
-                return RunQuiet(ctx, action ?? "setup");
+                return RunQuiet(ctx, action ?? "setup", args.Contains("--yes"));
             }
 
             Application.EnableVisualStyles();
@@ -42,17 +42,17 @@ namespace SmartBuffer
         }
 
         // no window, so an open obs just stops it instead of asking
-        private static int RunQuiet(Context ctx, string action)
+        private static int RunQuiet(Context ctx, string action, bool closeObs)
         {
             try
             {
                 if (action == "remove")
                 {
-                    Setup.Remove(ctx, _ => false);
+                    Setup.Remove(ctx, _ => closeObs);
                 }
                 else
                 {
-                    Setup.Install(ctx, _ => false);
+                    Setup.Install(ctx, _ => closeObs);
                 }
                 return 0;
             }

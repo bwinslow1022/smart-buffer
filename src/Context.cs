@@ -27,7 +27,16 @@ namespace SmartBuffer
         public string ScriptPath => Path.Combine(AppDir, "smartbuffer.lua");
         public string SoundPath => Path.Combine(AppDir, "saved.wav");
         public string LogPath => Path.Combine(AppDir, "setup.log");
-        public string InstalledExe => Path.Combine(AppDir, AppName + ".exe");
+        // the installer puts the app in Program Files; without it, setup copies the exe into AppData
+        public string InstalledExe => ProgramFilesExe() ?? Path.Combine(AppDir, AppName + ".exe");
+        public bool IsProgramFilesInstall => ProgramFilesExe() != null;
+
+        public static string ProgramFilesExe()
+        {
+            string programFiles = Environment.GetEnvironmentVariable("ProgramW6432") ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string exe = Path.Combine(programFiles, AppName, AppName + ".exe");
+            return File.Exists(exe) ? exe : null;
+        }
         public string ProfileDir => Path.Combine(ConfigDir, "basic", "profiles", AppName);
         public string CollectionPath => Path.Combine(ConfigDir, "basic", "scenes", AppName + ".json");
         public string UserIniPath => Path.Combine(ConfigDir, "user.ini");
@@ -36,6 +45,12 @@ namespace SmartBuffer
         {
             OwnObsRoot = DefaultOwnObsRoot;
             ConfigDir = Path.Combine(OwnObsRoot, "config", "obs-studio");
+        }
+
+        public void UseSharedObs()
+        {
+            OwnObsRoot = null;
+            ConfigDir = ForThisUserShared().ConfigDir;
         }
 
         public static Context ForThisUser()
