@@ -197,7 +197,6 @@ namespace SmartBuffer
                 video.Clicked += OnVideoClicked;
                 video.Finished += UpdatePlayState;
                 video.Opened += () => { UpdateClock(); UpdateTrim(); };
-                video.KeyPressed += OnVideoKey;
                 frame.Padding = new Padding(1);
                 frame.Controls.Add(video);
             }
@@ -384,7 +383,7 @@ namespace SmartBuffer
             uploadFine.SetBounds(0, y, width, fineHeight + 2);
         }
 
-        // the preview can fail (an AV1 clip without Windows' AV1 extension), the file's own length still works
+        // the preview can fail (a codec windows doesn't have), the file's own length still works
         private TimeSpan ClipLength => video != null && video.Length > TimeSpan.Zero ? video.Length : (file != null ? cache.Get(file.Path)?.Length : null) ?? TimeSpan.Zero;
         private TimeSpan TrimEnd => trimEnd ?? ClipLength;
 
@@ -527,18 +526,6 @@ namespace SmartBuffer
                 return;
             }
             Toggle();
-        }
-
-        private void OnVideoKey(System.Windows.Input.Key key)
-        {
-            if (key == System.Windows.Input.Key.Space)
-            {
-                Toggle();
-            }
-            else if (key == System.Windows.Input.Key.Escape)
-            {
-                closeOverlay();
-            }
         }
 
         private void ShowInFolder()
