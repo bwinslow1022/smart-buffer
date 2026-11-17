@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace SmartBuffer
@@ -22,7 +24,13 @@ namespace SmartBuffer
         private const int BarWidth = 6;
         private const int BarMinHeight = 40;
 
+        private const int PreviewDelayMs = 450;
+        private static readonly Regex DefaultName = new Regex(@"\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}");
+
         private readonly MediaCache cache;
+        private readonly Timer previewTimer = new Timer { Interval = PreviewDelayMs };
+        private VideoHost preview;
+        private int previewing = -1;
         private List<LibraryFolder> folders;
         private List<LibraryFile> files;
         private string noun = "clip";
@@ -40,6 +48,63 @@ namespace SmartBuffer
             this.cache = cache;
             SetStyle(ControlStyles.Selectable, true);
             cache.Updated += Invalidate;
+            previewTimer.Tick += (_, __) => PreviewTick();
+        }
+
+        // starts after a short hover, and stops once the mouse is off that thumbnail (the video sits on top, so it's polled)
+        private void PreviewTick()
+        {
+            Rectangle thumb = previewing >= 0 ? Thumb(previewing) : Rectangle.Empty;
+            if (previewing >= 0)
+            {
+                if (!thumb.Contains(PointToClient(Cursor.Position)) || !Visible)
+                {
+                    StopPreview();
+                }
+                return;
+            }
+            if (files == null || hover < 0 || hover >= files.Count || !Visible)
+            {
+                previewTimer.Stop();
+                return;
+            }
+            if (preview == null)
+            {
+                preview = new VideoHost { Visible = false };
+                preview.Clicked += () =>
+                {
+                    int index = previewing;
+                    StopPreview();
+                    if (files != null && index >= 0 && index < files.Count)
+                    {
+                        FileOpened?.Invoke(files[index]);
+                    }
+                };
+                Controls.Add(preview);
+            }
+            previewing = hover;
+            preview.Bounds = Rectangle.Inflate(Thumb(hover), -1, -1);
+            preview.LoadPreview(files[hover].Path);
+            preview.Visible = true;
+            previewTimer.Interval = 150;
+        }
+
+        public void StopPreview()
+        {
+            previewTimer.Stop();
+            previewTimer.Interval = PreviewDelayMs;
+            previewing = -1;
+            if (preview != null)
+            {
+                preview.Visible = false;
+                preview.Unload();
+            }
+        }
+
+        private Rectangle Thumb(int index)
+        {
+            Rectangle tile = Tile(index);
+            return new Rectangle(tile.X, tile.Y, tile.Width, tile.Width * 9 / 16);
         }
 
         public void ShowFolders(List<LibraryFolder> folders, string noun, string empty)
@@ -75,6 +140,7 @@ namespace SmartBuffer
 
         private void Reset()
         {
+            StopPreview();
             scroll = 0;
             hover = -1;
             Invalidate();
@@ -85,6 +151,8 @@ namespace SmartBuffer
             if (disposing)
             {
                 cache.Updated -= Invalidate;
+                previewTimer.Dispose();
+                preview?.Unload();
             }
             base.Dispose(disposing);
         }
@@ -211,9 +279,13 @@ namespace SmartBuffer
             var thumb = new Rectangle(tile.X, tile.Y, tile.Width, tile.Width * 9 / 16);
             VideoThumb.Draw(graphics, thumb, cache.Get(file.Path), hovered ? Theme.Accent : Theme.Border, 1F, 9, 8, 12);
             int y = thumb.Bottom + Ui.S(8);
-            Ui.DrawLine(graphics, Library.When(file.Modified), Ui.Strong(14), new Rectangle(tile.X, y, tile.Width, Ui.S(21)), Theme.Text);
+            // a renamed clip shows its name, the date moves down next to the size
+            string name = Path.GetFileNameWithoutExtension(file.Name);
+            bool renamed = !DefaultName.IsMatch(name);
+            Ui.DrawLine(graphics, renamed ? name : Library.When(file.Modified), Ui.Strong(14), new Rectangle(tile.X, y, tile.Width, Ui.S(21)), Theme.Text);
             y += Ui.S(23);
-            Ui.DrawLine(graphics, Library.SizeText(file.Size), Ui.Text(12.5F), new Rectangle(tile.X, y, tile.Width, Ui.S(18)), Theme.Muted);
+            string detail = Library.SizeText(file.Size);
+            Ui.DrawLine(graphics, renamed ? Library.When(file.Modified) + ", " + detail : detail, Ui.Text(12.5F), new Rectangle(tile.X, y, tile.Width, Ui.S(18)), Theme.Muted);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -228,6 +300,14 @@ namespace SmartBuffer
                 return;
             }
             int found = TileAt(e.Location);
+            if (found != hover && files != null && previewing < 0)
+            {
+                previewTimer.Stop();
+                if (found >= 0)
+                {
+                    previewTimer.Start();
+                }
+            }
             Change(ref hover, found);
             Cursor = found >= 0 ? Cursors.Hand : Cursors.Default;
         }
@@ -281,6 +361,7 @@ namespace SmartBuffer
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
+            StopPreview();
             scroll = Math.Max(0, Math.Min(MaxScroll, scroll - Math.Sign(e.Delta) * Ui.S(WheelStep)));
             Invalidate();
         }

@@ -85,18 +85,21 @@ namespace SmartBuffer
             return (bySize ? folder.Files.OrderByDescending(file => file.Size) : folder.Files.OrderByDescending(file => file.Modified)).ToList();
         }
 
+        private static readonly System.Globalization.CultureInfo Us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+
+        // US style: Nov 15, 9:07 PM
         public static string When(DateTime time)
         {
             DateTime today = DateTime.Today;
             if (time.Date == today)
             {
-                return "Today " + time.ToString("HH:mm");
+                return "Today " + time.ToString("h:mm tt", Us);
             }
             if (time.Date == today.AddDays(-1))
             {
-                return "Yesterday " + time.ToString("HH:mm");
+                return "Yesterday " + time.ToString("h:mm tt", Us);
             }
-            return time.Year == today.Year ? time.ToString("d MMM HH:mm") : time.ToString("d MMM yyyy");
+            return time.Year == today.Year ? time.ToString("MMM d, h:mm tt", Us) : time.ToString("MMM d, yyyy", Us);
         }
 
         public static string SizeText(long bytes)
@@ -131,7 +134,7 @@ namespace SmartBuffer
             return name.Substring(0, Math.Min(2, name.Length)).ToUpperInvariant();
         }
 
-        // same game keeps the same colour every time, string.GetHashCode isn't stable across runs
+        // same game keeps the same color every time, string.GetHashCode isn't stable across runs
         public static Color BadgeColor(string name)
         {
             if (name == DesktopFolderName || name == LooseFolderName)

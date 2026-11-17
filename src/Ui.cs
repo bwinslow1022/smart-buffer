@@ -30,6 +30,8 @@ namespace SmartBuffer
         public const string Link = "\uE71B";
         public const string Retry = "\uE72C";
         public const string Delete = "\uE74D";
+        public const string Star = "\uE734";
+        public const string StarFilled = "\uE735";
     }
 
     // the overlay is laid out in 96 dpi pixels and scaled to whichever monitor it opens on
@@ -52,6 +54,13 @@ namespace SmartBuffer
         };
 
         public static float Scale { get; private set; } = 1F;
+
+        public static void UseMainMonitor()
+        {
+            Rectangle main = Screen.PrimaryScreen.Bounds;
+            IntPtr monitor = MonitorFromPoint(new Point(main.Left + main.Width / 2, main.Top + main.Height / 2), MonitorNearest);
+            Scale = GetDpiForMonitor(monitor, EffectiveDpi, out uint dpiX, out uint _) == 0 ? dpiX / BaseDpi : 1F;
+        }
 
         public static void UseMonitorOf(IntPtr window)
         {
@@ -111,7 +120,7 @@ namespace SmartBuffer
             }
         }
 
-        // cleartype gives icons coloured edges, so these go through plain antialiasing
+        // cleartype gives icons colored edges, so these go through plain antialiasing
         public static void DrawIcon(Graphics graphics, string icon, Rectangle box, Color color, float px)
         {
             TextRenderingHint hint = graphics.TextRenderingHint;
@@ -169,6 +178,9 @@ namespace SmartBuffer
 
         [DllImport("user32.dll")]
         private static extern IntPtr MonitorFromWindow(IntPtr window, int flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromPoint(Point point, int flags);
 
         [DllImport("shcore.dll")]
         private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);

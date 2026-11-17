@@ -87,6 +87,7 @@ namespace SmartBuffer
                 {
                     return 0;
                 }
+                RefreshAssets(ctx);
                 using (var companion = new Companion(ctx))
                 {
                     if (atLogin)
@@ -98,6 +99,22 @@ namespace SmartBuffer
                 GC.KeepAlive(mutex);
             }
             return 0;
+        }
+
+        // an update only swaps the exe, so the obs script it carries is put in place here (obs picks it up on its next start)
+        private static void RefreshAssets(Context ctx)
+        {
+            try
+            {
+                if (Setup.IsInstalled(ctx))
+                {
+                    ProfileWriter.WriteAssets(ctx);
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                ctx.Log("couldn't refresh the obs script: " + e.Message);
+            }
         }
 
         // left off stays off across a reboot, so obs only starts if recording is meant to be on
@@ -154,6 +171,26 @@ namespace SmartBuffer
             {
                 Thread.Sleep(100);
             }
+        }
+
+        // a click on the saved card: screenshots open in the photo viewer, videos in the player
+        private void OpenSaved(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                ToggleOverlay();
+                return;
+            }
+            if (!path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".mov", StringComparison.OrdinalIgnoreCase))
+            {
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose();
+                return;
+            }
+            if (overlay == null)
+            {
+                ToggleOverlay();
+            }
+            overlay?.OpenSaved(path);
         }
 
         public void ToggleOverlay()
@@ -420,6 +457,22 @@ namespace SmartBuffer
             }
         }
 
+        // only does anything with a clips folder limit set, which is off by default
+        private void CleanSoon()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    ClipCare.Clean(ctx, Settings.Load(ctx));
+                }
+                catch (Exception e)
+                {
+                    ctx.Log("storage limit failed: " + e);
+                }
+            });
+        }
+
         private void CheckSaved()
         {
             DateTime written;
@@ -444,23 +497,28 @@ namespace SmartBuffer
             // the first read and an obs restart (count back to 0) only set the baseline
             bool isNew = lastSaved >= 0 && status.Saved > lastSaved;
             lastSaved = status.Saved;
+            if (isNew)
+            {
+                CleanSoon();
+            }
             if (!isNew || !Settings.Load(ctx).SaveNotification)
             {
                 return;
             }
             string where = string.IsNullOrEmpty(status.SavedGame) ? "" : status.SavedGame;
+            string path = status.SavedPath;
             switch (status.SavedKind)
             {
                 case "recording":
-                    SaveToast.Show("Recording saved", where, Icons.Video);
+                    SaveToast.Show("Recording saved", where, Icons.Video, () => OpenSaved(path));
                     break;
                 case "screenshot":
-                    SaveToast.Show("Screenshot saved", where, Icons.Camera);
+                    SaveToast.Show("Screenshot saved", where, Icons.Camera, () => OpenSaved(path));
                     break;
                 default:
                     int seconds = Settings.Load(ctx).ClipSeconds;
                     string length = seconds % 60 == 0 ? $"last {seconds / 60} min" : $"last {seconds} s";
-                    SaveToast.Show("Clip saved", string.IsNullOrEmpty(where) ? length : $"{where} \u00b7 {length}", Icons.Film);
+                    SaveToast.Show("Clip saved", string.IsNullOrEmpty(where) ? length : $"{where} \u00b7 {length}", Icons.Film, () => OpenSaved(path));
                     break;
             }
         }

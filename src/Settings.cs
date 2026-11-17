@@ -26,6 +26,7 @@ namespace SmartBuffer
         public bool SaveNotification { get; set; } = true;
         public int ShareLimitMb { get; set; } = 20;
         public bool SortByGame { get; set; } = true;
+        public int StorageLimitGb { get; set; } // 0 = off, nothing is ever deleted
 
         public string Capture { get; set; } = CaptureGame;
         public string MonitorId { get; set; } = "";

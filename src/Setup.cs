@@ -375,7 +375,7 @@ namespace SmartBuffer
             }
             if (!confirm("OBS is open and has to close for this. Close it now?"))
             {
-                throw new SetupException("Close OBS and run this again. Nothing was changed.", cancelled: true);
+                throw new SetupException("Close OBS and run this again. Nothing was changed.", canceled: true);
             }
             return true;
         }

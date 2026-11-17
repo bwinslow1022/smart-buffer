@@ -13,7 +13,7 @@ namespace SmartBuffer
         private static readonly Color Panel = Color.FromArgb(39, 39, 42);
         private static readonly Color Text1 = Color.FromArgb(244, 244, 245);
         private static readonly Color Muted = Color.FromArgb(161, 161, 170);
-        private static readonly Color Accent = Color.FromArgb(109, 94, 245);
+        private static readonly Color Accent = Color.FromArgb(59, 130, 246);
 
         private readonly Context ctx;
         private readonly string autoRun;

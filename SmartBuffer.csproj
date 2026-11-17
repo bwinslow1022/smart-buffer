@@ -8,7 +8,7 @@
     <RootNamespace>SmartBuffer</RootNamespace>
     <AssemblyName>SmartBuffer</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.8.2</Version>
+    <Version>0.9.1</Version>
     <Product>SmartBuffer</Product>
     <Description>Sets up OBS as an always-on clip recorder</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -20,6 +20,7 @@
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.VisualBasic" />
     <!-- WinRT media player for the clip preview; these ship with every Windows 10/11 install, nothing is copied -->
     <Reference Include="Windows.Foundation"><HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Foundation.winmd</HintPath><Private>false</Private></Reference>
     <Reference Include="Windows.Media"><HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Media.winmd</HintPath><Private>false</Private></Reference>

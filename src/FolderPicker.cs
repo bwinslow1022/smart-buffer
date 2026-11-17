@@ -13,9 +13,9 @@ namespace SmartBuffer
         private const uint ForceFileSystem = 0x40;
         private const uint PathMustExist = 0x800;
         private const uint DisplayName = 0x80058000; // SIGDN_FILESYSPATH
-        private const int Cancelled = unchecked((int)0x800704C7);
+        private const int Canceled = unchecked((int)0x800704C7);
 
-        /// Returns the chosen folder, or null if the dialog was cancelled.
+        /// Returns the chosen folder, or null if the dialog was canceled.
         public static string Pick(IWin32Window owner, string title, string start)
         {
             var dialog = (IFileOpenDialog)new FileOpenDialog();
@@ -30,7 +30,7 @@ namespace SmartBuffer
                     dialog.SetFolder(folder);
                 }
                 int hr = dialog.Show(owner?.Handle ?? IntPtr.Zero);
-                if (hr == Cancelled)
+                if (hr == Canceled)
                 {
                     return null;
                 }

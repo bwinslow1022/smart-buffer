@@ -29,6 +29,15 @@ namespace SmartBuffer
         private readonly IconButton backButton = new IconButton(Icons.Left) { Boxed = true };
         private readonly IconButton closeButton = new IconButton(Icons.Close) { BackColor = Theme.Bar, IconColor = Theme.Muted, HoverColor = Theme.Panel, IconSize = 12 };
         private readonly Breadcrumb crumb = new Breadcrumb { BackColor = Theme.Bar };
+        private readonly TextBox search = new TextBox
+        {
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Theme.Panel,
+            ForeColor = Theme.Text,
+            Font = Ui.Text(13),
+        };
+        private const int SearchWidth = 220;
+        private string Query => search.Text.Trim();
         private readonly SegmentToggle sort = new SegmentToggle("Recently modified", "Biggest first") { BackColor = Theme.Bar };
         private readonly LibraryGrid grid;
 
@@ -70,7 +79,13 @@ namespace SmartBuffer
             backButton.Click += (_, __) => GoBack();
             closeButton.Click += (_, __) => CloseGallery();
             sort.Changed += OnSortChanged;
-            bar.Controls.AddRange(new Control[] { backButton, crumb, sort, closeButton });
+            bar.Controls.AddRange(new Control[] { backButton, crumb, search, sort, closeButton });
+            search.TextChanged += (_, __) =>
+            {
+                ShowCurrentGrid();
+                Render();
+            };
+            search.HandleCreated += (_, __) => SendMessage(search.Handle, SetCueBanner, (IntPtr)1, "Search all " + (Kind == LibraryKind.Clips ? "clips" : "recordings"));
             Controls.Add(bar);
             Controls.Add(barLine);
 
@@ -85,6 +100,11 @@ namespace SmartBuffer
 
         public void ShowLibrary(LibraryKind kind)
         {
+            search.Text = "";
+            if (search.IsHandleCreated)
+            {
+                SendMessage(search.Handle, SetCueBanner, (IntPtr)1, "Search all " + (kind == LibraryKind.Clips ? "clips" : "recordings"));
+            }
             ShowingSettings = false;
             player?.Unload();
             Kind = kind;
@@ -97,13 +117,23 @@ namespace SmartBuffer
         }
 
         // straight into the player, from the recent clips on the dock
-        public void ShowClip(LibraryFolder folder, LibraryFile file)
+        public void ShowClip(LibraryFolder folder, LibraryFile file, LibraryKind kind)
         {
             ShowingSettings = false;
-            Kind = LibraryKind.Clips;
-            openFolder = folder;
+            Kind = kind;
             Bounds = area;
             ShowPanel();
+            if (!System.IO.File.Exists(file.Path))
+            {
+                // deleted or renamed outside the player, so the folders show instead
+                dock.RefreshRecent();
+                openFolder = null;
+                openFile = null;
+                Render();
+                Rescan();
+                return;
+            }
+            openFolder = folder;
             OpenFile(file);
         }
 
@@ -191,6 +221,11 @@ namespace SmartBuffer
 
         private void OnKey(object sender, KeyEventArgs e)
         {
+            // typing a new name: escape and space belong to the text box
+            if (FocusedTextBox())
+            {
+                return;
+            }
             if (e.KeyCode == Keys.Escape)
             {
                 dock.CloseIfIdle();
@@ -201,6 +236,43 @@ namespace SmartBuffer
                 e.Handled = true;
             }
         }
+
+        // arrows would otherwise move focus between buttons before the player saw them
+        protected override bool ProcessCmdKey(ref Message message, Keys keyData)
+        {
+            if (openFile != null && !ShowingSettings && player != null && !FocusedTextBox() && !(ActiveControl is ComboBox box && box.DroppedDown))
+            {
+                switch (keyData)
+                {
+                    case Keys.Left:
+                        player.Skip(-PlayerPanel.SkipSeconds);
+                        return true;
+                    case Keys.Right:
+                        player.Skip(PlayerPanel.SkipSeconds);
+                        return true;
+                    case Keys.Oemcomma:
+                        player.StepFrame(false);
+                        return true;
+                    case Keys.OemPeriod:
+                        player.StepFrame(true);
+                        return true;
+                }
+            }
+            return base.ProcessCmdKey(ref message, keyData);
+        }
+
+        private static bool FocusedTextBox()
+        {
+            return Control.FromHandle(GetFocus()) is TextBox box && !box.ReadOnly;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr GetFocus();
+
+        private const int SetCueBanner = 0x1501;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
 
         private async void Rescan()
         {
@@ -239,8 +311,24 @@ namespace SmartBuffer
                 : "No recordings yet. Press " + saved.RecordHotkey + " to start one.";
         }
 
+        // matches the file name or its game folder, across every folder
+        private List<LibraryFile> SearchResults()
+        {
+            string query = Query;
+            return folders
+                .SelectMany(folder => folder.Files.Where(file => file.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                    || folder.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
+                .OrderByDescending(file => file.Modified)
+                .ToList();
+        }
+
         private void ShowCurrentGrid()
         {
+            if (Query != "" && openFolder == null)
+            {
+                grid.ShowFiles(SearchResults());
+                return;
+            }
             if (openFolder != null)
             {
                 grid.ShowFiles(Library.Sorted(openFolder, BySize));
@@ -272,16 +360,43 @@ namespace SmartBuffer
 
         private void OpenFile(LibraryFile file)
         {
+            // from search results, the folder is whichever one holds the file
+            if (openFolder == null || !openFolder.Files.Contains(file))
+            {
+                openFolder = folders.FirstOrDefault(folder => folder.Files.Contains(file)) ?? openFolder;
+            }
             openFile = file;
             if (player == null)
             {
                 player = new PlayerPanel(ctx, owner.Uploads, cache, ConfirmUpload, dock.CloseForOtherApp);
                 player.FilePicked += OpenFile;
+                player.FileGone += OnFileGone;
+                player.FileRenamed += () =>
+                {
+                    Render();
+                    dock.RefreshRecent();
+                };
                 Controls.Add(player);
                 LayoutPage();
             }
             Render();
             player.Open(Library.Sorted(openFolder, BySize), file, openFolder.Name);
+        }
+
+        // the next clip in the folder opens in its place, or back to the folders when it was the last
+        private void OnFileGone(LibraryFile gone)
+        {
+            List<LibraryFile> sorted = Library.Sorted(openFolder, BySize);
+            int index = sorted.FindIndex(f => f.Path == gone.Path);
+            openFolder.Files.RemoveAll(f => f.Path == gone.Path);
+            sorted.RemoveAll(f => f.Path == gone.Path);
+            dock.RefreshRecent();
+            if (sorted.Count == 0)
+            {
+                GoToRoot();
+                return;
+            }
+            OpenFile(sorted[Math.Min(Math.Max(index, 0), sorted.Count - 1)]);
         }
 
         private void GoBack()
@@ -348,11 +463,26 @@ namespace SmartBuffer
                 }
                 else
                 {
-                    crumb.Set(Library.Plural(folders.Count, "folder"), Part(root, null));
+                    if (Query != "")
+                    {
+                        int matches = SearchResults().Count;
+                        crumb.Set(matches == 1 ? "1 match" : matches + " matches", Part(root, null));
+                    }
+                    else
+                    {
+                        crumb.Set(Library.Plural(folders.Count, "folder") + ", " + UsedSpace(), Part(root, null));
+                    }
                 }
             }
             LayoutPage();
             dock.UpdateTabs();
+        }
+
+        private string UsedSpace()
+        {
+            string used = Library.SizeText(folders.Sum(folder => folder.Size));
+            long limit = Kind == LibraryKind.Clips ? ClipCare.LimitBytes(Settings.Load(ctx)) : 0;
+            return limit > 0 ? used + " of " + Library.SizeText(limit) : used;
         }
 
         private static KeyValuePair<string, Action> Part(string text, Action click)
@@ -386,6 +516,12 @@ namespace SmartBuffer
             {
                 sort.Location = new Point(right - sort.Width, (bar.Height - sort.Height) / 2);
                 right = sort.Left - Ui.S(12);
+            }
+            search.Visible = !ShowingSettings && openFile == null && openFolder == null;
+            if (search.Visible)
+            {
+                search.SetBounds(right - Ui.S(SearchWidth), (bar.Height - search.Height) / 2, Ui.S(SearchWidth), search.Height);
+                right = search.Left - Ui.S(12);
             }
             crumb.SetBounds(x, top, Math.Max(0, right - x), square);
 

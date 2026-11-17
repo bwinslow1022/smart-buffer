@@ -115,11 +115,11 @@ namespace SmartBuffer
 
     public sealed class SetupException : Exception
     {
-        public bool Cancelled { get; }
+        public bool Canceled { get; }
 
-        public SetupException(string message, bool cancelled = false) : base(message)
+        public SetupException(string message, bool canceled = false) : base(message)
         {
-            Cancelled = cancelled;
+            Canceled = canceled;
         }
     }
 }

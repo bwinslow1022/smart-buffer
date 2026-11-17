@@ -16,14 +16,15 @@ namespace SmartBuffer
         public static readonly Color Slash = Color.FromArgb(113, 113, 122);
         public static readonly Color Text = Color.FromArgb(244, 244, 245);
         public static readonly Color Muted = Color.FromArgb(161, 161, 170);
-        public static readonly Color Accent = Color.FromArgb(109, 94, 245);
-        public static readonly Color AccentHover = Color.FromArgb(124, 110, 247);
+        public static readonly Color Accent = Color.FromArgb(59, 130, 246);
+        public static readonly Color AccentHover = Color.FromArgb(96, 165, 250);
         public static readonly Color Knob = Color.FromArgb(250, 250, 250);
         public static readonly Color Danger = Color.FromArgb(239, 68, 68);
         public static readonly Color ErrorText = Color.FromArgb(252, 165, 165);
-        public static readonly Color FolderBack = Color.FromArgb(79, 63, 208);
-        public static readonly Color FolderEdge = Color.FromArgb(141, 130, 248);
-        public static readonly Color Sky = Color.FromArgb(56, 189, 248);
+        public static readonly Color FolderBack = Color.FromArgb(29, 78, 216);
+        public static readonly Color FolderEdge = Color.FromArgb(147, 197, 253);
+        public static readonly Color Pink = Color.FromArgb(236, 72, 153);
+        public static readonly Color Highlight = Color.FromArgb(251, 191, 36);
         public static readonly Color Mint = Color.FromArgb(52, 211, 153);
 
         public static Color Mix(Color a, Color b, float amount)
@@ -172,10 +173,9 @@ namespace SmartBuffer
 
     public sealed class FlatCombo : ComboBox
     {
-        private const int WmPaint = 0x000F;
-
         public FlatCombo()
         {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             DropDownStyle = ComboBoxStyle.DropDownList;
             FlatStyle = FlatStyle.Flat;
             DrawMode = DrawMode.OwnerDrawFixed;
@@ -185,28 +185,22 @@ namespace SmartBuffer
             ItemHeight = Ui.S(22);
         }
 
-        // windows draws a white border and arrow on flat combos, so i paint over them
-        protected override void WndProc(ref Message message)
+        protected override void OnPaint(PaintEventArgs e)
         {
-            base.WndProc(ref message);
-            if (message.Msg != WmPaint)
-            {
-                return;
-            }
-            using (Graphics graphics = Graphics.FromHwnd(Handle))
-            using (var border = new Pen(Theme.Border))
-            using (var inner = new Pen(Theme.Panel))
+            Graphics graphics = e.Graphics;
+            Rectangle box = ClientRectangle;
             using (var fill = new SolidBrush(Theme.Panel))
+            using (var border = new Pen(Focused || DroppedDown ? Theme.Accent : Theme.Border))
             using (var arrow = new Pen(Enabled ? Theme.Text : Theme.Muted, 1.5F))
             {
-                int width = SystemInformation.VerticalScrollBarWidth + 2;
-                Rectangle box = ClientRectangle;
-                graphics.FillRectangle(fill, box.Right - width - 1, box.Top + 1, width, box.Height - 2);
-                // a disabled combo gets a white edge just inside the border
-                graphics.DrawRectangle(inner, box.Left + 1, box.Top + 1, box.Width - 3, box.Height - 3);
+                graphics.FillRectangle(fill, box);
                 graphics.DrawRectangle(border, box.Left, box.Top, box.Width - 1, box.Height - 1);
+                int arrowWidth = SystemInformation.VerticalScrollBarWidth + 2;
+                string text = SelectedIndex >= 0 ? Items[SelectedIndex].ToString() : "";
+                TextRenderer.DrawText(graphics, text, Font, new Rectangle(Ui.S(6), 0, box.Width - arrowWidth - Ui.S(6), box.Height), Enabled ? Theme.Text : Theme.Muted,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                int centerX = box.Right - width / 2 - 1;
+                int centerX = box.Right - arrowWidth / 2 - 1;
                 int centerY = box.Height / 2;
                 graphics.DrawLines(arrow, new[]
                 {
@@ -215,6 +209,18 @@ namespace SmartBuffer
                     new Point(centerX + 4, centerY - 2),
                 });
             }
+        }
+
+        protected override void OnSelectedIndexChanged(EventArgs e)
+        {
+            base.OnSelectedIndexChanged(e);
+            Invalidate();
+        }
+
+        protected override void OnDropDownClosed(EventArgs e)
+        {
+            base.OnDropDownClosed(e);
+            Invalidate();
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e)
@@ -497,7 +503,7 @@ namespace SmartBuffer
         public bool Card { get; set; }
         // the title part on top, anything below it (like the save button) is the row's own child
         public int HeadHeight { get; set; }
-        // colour of the icon badge, and of the outline while Active
+        // color of the icon badge, and of the outline while Active
         public Color Tint { get; set; } = Theme.Accent;
         private bool active;
 
@@ -726,6 +732,14 @@ namespace SmartBuffer
 
         private double rangeStart;
         private double rangeEnd = 1;
+        private List<KeyValuePair<double, double>> marks = new List<KeyValuePair<double, double>>();
+
+        // highlight moments, drawn as amber bars over the track
+        public void SetMarks(List<KeyValuePair<double, double>> value)
+        {
+            marks = value ?? new List<KeyValuePair<double, double>>();
+            Invalidate();
+        }
 
         // the part outside start..end is dimmed, for trimming
         public void SetRange(double start, double end)
@@ -751,6 +765,15 @@ namespace SmartBuffer
             if (filled > 0)
             {
                 Ui.FillRound(graphics, Theme.Accent, new Rectangle(track.X, track.Y, Math.Max(filled, thickness), thickness), thickness / 2);
+            }
+            using (var amber = new SolidBrush(Theme.Highlight))
+            {
+                foreach (KeyValuePair<double, double> mark in marks)
+                {
+                    int from = track.X + (int)Math.Round(track.Width * Math.Max(0, mark.Key));
+                    int to = track.X + (int)Math.Round(track.Width * Math.Min(1, mark.Value));
+                    graphics.FillRectangle(amber, from, track.Y - Ui.S(4), Math.Max(Ui.S(3), to - from), Ui.S(3));
+                }
             }
             if (rangeStart > 0 || rangeEnd < 1)
             {
@@ -979,6 +1002,95 @@ namespace SmartBuffer
                     break;
                 }
                 VideoThumb.Draw(graphics, cell, cache.Get(clips[i].Value.Path), i == hot ? Theme.Accent : Theme.Border, i == hot ? Ui.Scale * 2F : 1F, 10, 6, 11);
+            }
+        }
+    }
+
+    // found highlight moments: tick box to keep, click the row to watch it
+    public sealed class MomentList : PaintedControl
+    {
+        public const int RowHeight = 34;
+        private List<Moment> moments = new List<Moment>();
+        private int hot = -1;
+
+        public event Action<Moment> Watch;
+        public event Action Changed;
+
+        public void Show(List<Moment> value)
+        {
+            moments = value;
+            Invalidate();
+        }
+
+        private int RowAt(int y)
+        {
+            int row = y / Ui.S(RowHeight);
+            return row >= 0 && row < moments.Count ? row : -1;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int row = RowAt(e.Y);
+            Cursor = row >= 0 ? Cursors.Hand : Cursors.Default;
+            Change(ref hot, row);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            hot = -1;
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            int row = RowAt(e.Y);
+            if (row < 0)
+            {
+                return;
+            }
+            if (e.X < Ui.S(34))
+            {
+                moments[row].Keep = !moments[row].Keep;
+                Invalidate();
+                Changed?.Invoke();
+            }
+            else
+            {
+                Watch?.Invoke(moments[row]);
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics graphics = e.Graphics;
+            graphics.Clear(BackColor);
+            int height = Ui.S(RowHeight);
+            for (int i = 0; i < moments.Count; i++)
+            {
+                Moment moment = moments[i];
+                var row = new Rectangle(0, i * height, Width - 1, height - Ui.S(4));
+                Ui.FillRound(graphics, i == hot ? Theme.Hover : Theme.Panel, row, Ui.S(7));
+
+                int box = Ui.S(16);
+                var check = new Rectangle(Ui.S(10), row.Y + (row.Height - box) / 2, box, box);
+                if (moment.Keep)
+                {
+                    Ui.FillRound(graphics, Theme.Accent, check, Ui.S(4));
+                    Ui.DrawIcon(graphics, "", check, Color.White, 10);
+                }
+                else
+                {
+                    Ui.DrawRound(graphics, Theme.Slash, check, Ui.S(4), Ui.Scale * 1.5F);
+                }
+
+                string when = Library.LengthText(TimeSpan.FromSeconds(moment.Start)) + " - " + Library.LengthText(TimeSpan.FromSeconds(moment.End));
+                Font font = Ui.Strong(13);
+                int whenWidth = Ui.Measure(when, font);
+                Ui.DrawLine(graphics, when, font, new Rectangle(Ui.S(36), row.Y, whenWidth + 2, row.Height), moment.Keep ? Theme.Text : Theme.Muted);
+                Color tag = moment.Kills > 0 ? Theme.Highlight : Theme.Muted;
+                Ui.DrawLine(graphics, moment.Why(), Ui.Text(12), new Rectangle(Ui.S(44) + whenWidth, row.Y, row.Width - whenWidth - Ui.S(54), row.Height), tag, TextFormatFlags.Right);
             }
         }
     }

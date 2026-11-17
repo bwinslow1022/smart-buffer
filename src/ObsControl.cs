@@ -11,6 +11,7 @@ namespace SmartBuffer
         public int Saved { get; set; } = -1;
         public string SavedKind { get; set; } = "";
         public string SavedGame { get; set; } = "";
+        public string SavedPath { get; set; } = "";
         public bool ObsRunning { get; set; }
         public bool ScriptRunning { get; set; }
         public bool Replay { get; set; }
@@ -104,6 +105,10 @@ namespace SmartBuffer
                         else if (key == "savedgame")
                         {
                             status.SavedGame = value;
+                        }
+                        else if (key == "savedpath")
+                        {
+                            status.SavedPath = value.Replace('/', '\\');
                         }
                     }
                 }

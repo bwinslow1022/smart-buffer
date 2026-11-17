@@ -7,7 +7,7 @@ namespace SmartBuffer
     public static class Program
     {
         private const int Failed = 1;
-        private const int Cancelled = 2;
+        private const int Canceled = 2;
 
         [STAThread]
         public static int Main(string[] args)
@@ -20,6 +20,7 @@ namespace SmartBuffer
             if (args.Contains("--selftest"))
             {
                 Highlights.SelfTest();
+                ClipCare.SelfTest();
                 Console.WriteLine("self-test ok");
                 return 0;
             }
@@ -66,7 +67,7 @@ namespace SmartBuffer
             catch (SetupException e)
             {
                 ctx.Log(e.Message);
-                return e.Cancelled ? Cancelled : Failed;
+                return e.Canceled ? Canceled : Failed;
             }
             catch (Exception e)
             {

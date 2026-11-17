@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -38,6 +39,9 @@ namespace SmartBuffer
         private readonly ProgressLine scrub = new ProgressLine { Interactive = true };
         private readonly Label clock = NewLabel(13, Theme.Muted);
         private readonly ThumbStrip strip;
+        private readonly Label keysHint = NewLabel(12, Theme.Muted);
+        private const int HintHeight = 22;
+        public const int SkipSeconds = 5;
         private readonly Panel side = new Panel { BackColor = Theme.Background };
 
         private readonly Label nameLabel = new Label { Font = Ui.Text(18, FontStyle.Bold), ForeColor = Theme.Text, AutoEllipsis = true, UseMnemonic = false };
@@ -46,6 +50,19 @@ namespace SmartBuffer
         private readonly List<Label> values = new List<Label>();
         private readonly ActionButton folderButton = new ActionButton("Show in folder", Icons.Folder);
         private readonly ActionButton copyButton = new ActionButton("Copy", Icons.Copy, false, FileHint);
+        private readonly ActionButton favoriteButton = new ActionButton("Favorite");
+        private readonly ActionButton removeButton = new ActionButton("Delete");
+        private readonly ActionButton renameButton = new ActionButton("Rename");
+        private readonly TextBox renameBox = new TextBox
+        {
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Theme.Panel,
+            ForeColor = Theme.Text,
+            Font = Ui.Text(13),
+            Visible = false,
+        };
+        private readonly ActionButton sortButton = new ActionButton("Sort as game");
+        private string desktopSource;
         private readonly Panel rule = new Panel { BackColor = Theme.Border };
 
         private readonly Label shareTitle = NewLabel(14, Theme.Text);
@@ -55,7 +72,12 @@ namespace SmartBuffer
         private readonly FlatCombo sizeCombo = new FlatCombo();
         private readonly ActionButton shareButton = new ActionButton("Make share copy", Icons.Film, true);
         private readonly Label shareStatus = NewLabel(12.5F, Theme.Muted);
-        private readonly ActionButton highlightButton = new ActionButton("Find highlights", Icons.Film);
+        private readonly ActionButton highlightButton = new ActionButton("Find highlights");
+        private readonly ActionButton learnButton = new ActionButton("Learn kill sound");
+        private readonly MomentList momentList = new MomentList();
+        private readonly ActionButton keepButton = new ActionButton("Save highlights", Icons.Film, true);
+        private List<Moment> moments = new List<Moment>();
+        private string game;
         private readonly Panel shareRule = new Panel { BackColor = Theme.Border };
         private static readonly Choice[] SizeChoices =
         {
@@ -95,10 +117,19 @@ namespace SmartBuffer
         private List<LibraryFile> files = new List<LibraryFile>();
         private LibraryFile file;
         private UploadState shownState;
+        // big clips upload as a smaller copy, this remembers which copy belongs to which clip
+        private readonly Dictionary<string, string> uploadCopies = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private const int UploadCopyMb = 95;
+
+        private string UploadPath => file != null && uploadCopies.TryGetValue(file.Path, out string copy) && File.Exists(copy) ? copy : file?.Path;
+        private long UploadSize => UploadPath == file?.Path ? file?.Size ?? 0 : new FileInfo(UploadPath).Length;
         private bool showError;
         private bool showDelete;
 
         public event Action<LibraryFile> FilePicked;
+        // deleted, or moved into a game folder, either way it's gone from this folder
+        public event Action<LibraryFile> FileGone;
+        public event Action FileRenamed;
 
         public PlayerPanel(Context ctx, Uploader uploads, MediaCache cache, Func<bool> confirmUpload, Action closeOverlay)
         {
@@ -126,6 +157,8 @@ namespace SmartBuffer
             Controls.Add(playButton);
             Controls.Add(scrub);
             Controls.Add(clock);
+            Controls.Add(keysHint);
+            keysHint.Text = "Space  play / pause        \u2190 \u2192  5 seconds back / ahead        ,  .  one frame back / ahead";
             Controls.Add(strip);
             Controls.Add(side);
 
@@ -161,19 +194,48 @@ namespace SmartBuffer
             endButton.Click += (_, __) => SetTrim(false);
             shareButton.Click += (_, __) => MakeShareCopy();
             highlightButton.Click += (_, __) => FindHighlights();
-            side.Controls.AddRange(new Control[] { shareTitle, startButton, endButton, trimHint, sizeCombo, shareButton, highlightButton, shareStatus, shareRule });
+            learnButton.Click += (_, __) => LearnKillSound();
+            keepButton.Click += (_, __) => SaveHighlights();
+            momentList.Watch += WatchMoment;
+            momentList.Changed += UpdateKeepButton;
+            side.Controls.AddRange(new Control[] { shareTitle, startButton, endButton, trimHint, sizeCombo, shareButton, highlightButton, learnButton, momentList, keepButton, shareStatus, shareRule });
             side.Controls.AddRange(new Control[]
             {
-                folderButton, copyButton, rule, uploadTitle, uploadRight, uploadBar, uploadDetail, uploadError, linkBox, uploadButton, deleteButton, cancelButton, uploadFine,
+                folderButton, copyButton, favoriteButton, renameButton, removeButton, renameBox, sortButton, rule, uploadTitle, uploadRight, uploadBar, uploadDetail, uploadError, linkBox, uploadButton, deleteButton, cancelButton, uploadFine,
             });
 
             folderButton.Click += (_, __) => ShowInFolder();
             copyButton.Click += (_, __) => CopyFile();
+            favoriteButton.Click += (_, __) =>
+            {
+                ClipCare.ToggleFavorite(ctx, file.Path);
+                UpdateFileButtons();
+            };
+            removeButton.Click += (_, __) => RemoveFile();
+            renameButton.Click += (_, __) => StartRename();
+            renameBox.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    FinishRename(true);
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    FinishRename(false);
+                }
+                else
+                {
+                    return;
+                }
+                e.Handled = e.SuppressKeyPress = true;
+            };
+            renameBox.Leave += (_, __) => FinishRename(true);
+            sortButton.Click += (_, __) => SortAsGame();
             uploadButton.Click += (_, __) => UploadClicked();
-            cancelButton.Click += (_, __) => uploads.Cancel(file.Path);
+            cancelButton.Click += (_, __) => uploads.Cancel(UploadPath);
             deleteButton.Click += (_, __) =>
             {
-                uploads.Delete(file.Path);
+                uploads.Delete(UploadPath);
                 UpdateUpload();
             };
 
@@ -192,6 +254,9 @@ namespace SmartBuffer
         {
             this.files = files;
             this.file = file;
+            game = title;
+            ShowMoments(new List<Moment>());
+            learnButton.Label = Highlights.KnowsKillSound(ctx, game) ? "Relearn kill sound" : "Learn kill sound";
 
             if (video == null)
             {
@@ -217,6 +282,7 @@ namespace SmartBuffer
             strip.Set(files, file);
             nameLabel.Text = title;
             fileLabel.Text = file.Name;
+            UpdateFileButtons();
             UpdateDetails();
             UpdatePlayState();
             UpdateClock();
@@ -233,6 +299,24 @@ namespace SmartBuffer
             }
             video.Toggle();
             UpdatePlayState();
+        }
+
+        public void Skip(int seconds)
+        {
+            if (video == null || video.Length <= TimeSpan.Zero)
+            {
+                return;
+            }
+            TimeSpan to = video.Position + TimeSpan.FromSeconds(seconds);
+            video.Position = to < TimeSpan.Zero ? TimeSpan.Zero : to > video.Length ? video.Length : to;
+            OnTick();
+        }
+
+        public void StepFrame(bool forward)
+        {
+            video?.StepFrame(forward);
+            UpdatePlayState();
+            BeginInvoke((Action)OnTick);
         }
 
         public void Unload()
@@ -274,7 +358,7 @@ namespace SmartBuffer
             int width = Math.Max(Ui.S(200), Width - margin * 2 - Ui.S(SideWidth) - Ui.S(SideGap));
 
             // ultrawide monitors would make the video taller than the window, so width gives way
-            int available = Height - margin * 2 - controls - gap * 2;
+            int available = Height - margin * 2 - controls - gap * 2 - Ui.S(HintHeight);
             int StripHeight(int w) => (w - stripGap * (StripCount - 1)) / StripCount * 9 / 16;
             if (width * 9 / 16 + StripHeight(width) > available)
             {
@@ -288,7 +372,9 @@ namespace SmartBuffer
             int clockWidth = Ui.S(110);
             clock.SetBounds(margin + width - clockWidth, y, clockWidth, controls);
             scrub.SetBounds(playButton.Right + gap, y, width - controls - clockWidth - gap * 2, controls);
-            y += controls + gap;
+            y += controls + Ui.S(4);
+            keysHint.SetBounds(margin, y, width, Ui.S(HintHeight - 4));
+            y += Ui.S(HintHeight) + gap - Ui.S(4);
             strip.SetBounds(margin, y, width, StripHeight(width));
             strip.Gap = stripGap;
 
@@ -304,7 +390,8 @@ namespace SmartBuffer
             y += Ui.S(30);
             int fileHeight = TextRenderer.MeasureText(fileLabel.Text, fileLabel.Font, new Size(width, 0), TextFormatFlags.WordBreak).Height;
             fileLabel.SetBounds(0, y, width, fileHeight + 2);
-            y += fileHeight + Ui.S(14);
+            renameBox.SetBounds(0, y - Ui.S(3), width, Ui.S(28));
+            y += Math.Max(fileHeight, renameBox.Visible ? Ui.S(26) : 0) + Ui.S(14);
 
             for (int i = 0; i < keys.Count; i++)
             {
@@ -317,7 +404,18 @@ namespace SmartBuffer
             folderButton.SetBounds(0, y, width, Ui.S(44));
             y += Ui.S(52);
             copyButton.SetBounds(0, y, width, Ui.S(44));
-            y += Ui.S(60);
+            y += Ui.S(52);
+            int third = (width - Ui.S(16)) / 3;
+            favoriteButton.SetBounds(0, y, third, Ui.S(40));
+            renameButton.SetBounds(third + Ui.S(8), y, third, Ui.S(40));
+            removeButton.SetBounds(third * 2 + Ui.S(16), y, width - third * 2 - Ui.S(16), Ui.S(40));
+            y += Ui.S(48);
+            if (desktopSource != null)
+            {
+                sortButton.SetBounds(0, y, width, Ui.S(40));
+                y += Ui.S(48);
+            }
+            y += Ui.S(8);
 
             shareRule.SetBounds(0, y, width, 1);
             y += Ui.S(14);
@@ -333,8 +431,16 @@ namespace SmartBuffer
             y += Ui.S(38);
             shareButton.SetBounds(0, y, width, Ui.S(44));
             y += Ui.S(52);
-            highlightButton.SetBounds(0, y, width, Ui.S(44));
-            y += Ui.S(48);
+            highlightButton.SetBounds(0, y, half, Ui.S(40));
+            learnButton.SetBounds(half + Ui.S(8), y, width - half - Ui.S(8), Ui.S(40));
+            y += Ui.S(46);
+            if (moments.Count > 0)
+            {
+                momentList.SetBounds(0, y, width, Ui.S(MomentList.RowHeight) * moments.Count);
+                y += momentList.Height + Ui.S(4);
+                keepButton.SetBounds(0, y, width, Ui.S(40));
+                y += Ui.S(46);
+            }
             int statusHeight = string.IsNullOrEmpty(shareStatus.Text) ? 0 : TextRenderer.MeasureText(shareStatus.Text, shareStatus.Font, new Size(width, 0), TextFormatFlags.WordBreak).Height;
             shareStatus.SetBounds(0, y, width, statusHeight + 2);
             y += statusHeight + Ui.S(14);
@@ -438,12 +544,7 @@ namespace SmartBuffer
             string source = file.Path;
             TimeSpan start = trimStart, end = TrimEnd;
             int limit = (int)((Choice)sizeCombo.SelectedItem).Value;
-            Action<string> status = text => BeginInvoke((Action)(() =>
-            {
-                shareStatus.Text = text;
-                shareStatus.ForeColor = Theme.Muted;
-                LayoutSide();
-            }));
+            Action<string> status = text => BeginInvoke((Action)(() => SetHighlightStatus(text, Theme.Muted)));
             Task.Run(() =>
             {
                 ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
@@ -470,8 +571,120 @@ namespace SmartBuffer
             })));
         }
 
-        // cuts the loud moments (shouting, fights) out as their own clips next to this one
+        // finds the moments and shows them for review, nothing is saved until "Save highlights"
         private void FindHighlights()
+        {
+            string source = file?.Path;
+            double seconds = ClipLength.TotalSeconds;
+            string forGame = game;
+            RunHighlightTask(status =>
+            {
+                ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
+                return Highlights.Find(ctx, source, seconds, forGame, status);
+            }, found =>
+            {
+                ShowMoments(found);
+                string tip = Highlights.KnowsKillSound(ctx, game) ? "" : " Tip: pause on a kill sound and click Learn kill sound, then kills get found too.";
+                return found.Count == 0
+                    ? "Nothing stood out." + tip
+                    : $"Found {found.Count}. Click one to watch it, untick the ones you don't want, then save." + tip;
+            });
+        }
+
+        // the game's kill sound, taken from where the video is paused
+        private void LearnKillSound()
+        {
+            if (video == null || video.Length <= TimeSpan.Zero)
+            {
+                SetHighlightStatus("The preview can't play this clip, so there's no spot to learn from.", Theme.ErrorText);
+                return;
+            }
+            string source = file.Path;
+            double at = video.Position.TotalSeconds;
+            double seconds = ClipLength.TotalSeconds;
+            string forGame = game;
+            RunHighlightTask(status =>
+            {
+                ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
+                return Highlights.LearnKillSound(ctx, source, at, seconds, forGame, status);
+            }, count =>
+            {
+                learnButton.Label = "Relearn kill sound";
+                return $"Learned the {forGame} kill sound, it hears {count} kill{(count == 1 ? "" : "s")} in this clip. If that's way off, pause exactly as a kill sound starts and learn it again.";
+            });
+        }
+
+        private void SaveHighlights()
+        {
+            List<Moment> kept = moments.Where(m => m.Keep).ToList();
+            if (kept.Count == 0)
+            {
+                return;
+            }
+            string source = file.Path;
+            RunHighlightTask(status => Highlights.Save(ctx, source, kept, status), made =>
+            {
+                ShowMoments(new List<Moment>());
+                return $"Saved {made.Count} highlight{(made.Count == 1 ? "" : "s")} next to this file, named \"(highlight 1)\" and up.";
+            });
+        }
+
+        private void WatchMoment(Moment moment)
+        {
+            if (video == null || video.Length <= TimeSpan.Zero)
+            {
+                return;
+            }
+            video.Position = TimeSpan.FromSeconds(moment.Start);
+            if (!video.Playing)
+            {
+                video.Toggle();
+            }
+            UpdatePlayState();
+            UpdateClock();
+        }
+
+        private void ShowMoments(List<Moment> found)
+        {
+            moments = found;
+            momentList.Show(found);
+            momentList.Visible = keepButton.Visible = found.Count > 0;
+            double length = Math.Max(1, ClipLength.TotalSeconds);
+            scrub.SetMarks(found.Select(m => new KeyValuePair<double, double>(m.Start / length, m.End / length)).ToList());
+            UpdateKeepButton();
+            LayoutSide();
+        }
+
+        private void UpdateKeepButton()
+        {
+            int count = moments.Count(m => m.Keep);
+            keepButton.Label = count == 1 ? "Save 1 highlight" : $"Save {count} highlights";
+            keepButton.Enabled = count > 0 && !sharing;
+        }
+
+        // progress arrives many times a second, so only a change in height moves the controls below
+        private void SetHighlightStatus(string text, Color color)
+        {
+            if (shareStatus.Text == text && shareStatus.ForeColor == color)
+            {
+                return;
+            }
+            int before = StatusHeight();
+            shareStatus.Text = text;
+            shareStatus.ForeColor = color;
+            if (StatusHeight() != before)
+            {
+                LayoutSide();
+            }
+        }
+
+        private int StatusHeight()
+        {
+            return string.IsNullOrEmpty(shareStatus.Text) ? 0 : TextRenderer.MeasureText(shareStatus.Text, shareStatus.Font, new Size(side.Width, 0), TextFormatFlags.WordBreak).Height;
+        }
+
+        // ffmpeg work off the ui thread, one at a time, with progress in the status line
+        private void RunHighlightTask<T>(Func<Action<string>, T> work, Func<T, string> done)
         {
             if (sharing || file == null)
             {
@@ -480,38 +693,23 @@ namespace SmartBuffer
             video?.Pause();
             UpdatePlayState();
             sharing = true;
-            shareButton.Enabled = highlightButton.Enabled = false;
-            string source = file.Path;
-            double seconds = ClipLength.TotalSeconds;
-            Action<string> status = text => BeginInvoke((Action)(() =>
-            {
-                shareStatus.Text = text;
-                shareStatus.ForeColor = Theme.Muted;
-                LayoutSide();
-            }));
-            Task.Run(() =>
-            {
-                ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
-                return Highlights.Make(ctx, source, seconds, status);
-            }).ContinueWith(task => BeginInvoke((Action)(() =>
+            shareButton.Enabled = highlightButton.Enabled = learnButton.Enabled = keepButton.Enabled = uploadButton.Enabled = false;
+            Action<string> status = text => BeginInvoke((Action)(() => SetHighlightStatus(text, Theme.Muted)));
+            Task.Run(() => work(status)).ContinueWith(task => BeginInvoke((Action)(() =>
             {
                 sharing = false;
-                shareButton.Enabled = highlightButton.Enabled = true;
+                shareButton.Enabled = highlightButton.Enabled = learnButton.Enabled = true;
+                UpdateKeepButton();
+                UpdateUpload();
                 if (task.IsFaulted)
                 {
                     Exception error = task.Exception.GetBaseException();
-                    shareStatus.Text = error is SetupException ? error.Message : "Something went wrong: " + error.Message;
-                    shareStatus.ForeColor = Theme.ErrorText;
+                    SetHighlightStatus(error is SetupException ? error.Message : "Something went wrong: " + error.Message, Theme.ErrorText);
                 }
                 else
                 {
-                    int count = task.Result.Count;
-                    shareStatus.Text = count == 0
-                        ? "Nothing stood out. Highlights need moments clearly louder than the rest of the clip."
-                        : $"Saved {count} highlight{(count == 1 ? "" : "s")} next to this file, named \"(highlight 1)\" and up.";
-                    shareStatus.ForeColor = Theme.Text;
+                    SetHighlightStatus(done(task.Result), Theme.Text);
                 }
-                LayoutSide();
             })));
         }
 
@@ -577,6 +775,133 @@ namespace SmartBuffer
             Toggle();
         }
 
+        private void UpdateFileButtons()
+        {
+            bool favorite = ClipCare.IsFavorite(ctx, file.Path);
+            favoriteButton.Label = favorite ? "Favorited" : "Favorite";
+            favoriteButton.Primary = favorite;
+            favoriteButton.Invalidate();
+            desktopSource = ClipCare.DesktopSource(ctx, file.Path);
+            sortButton.Visible = desktopSource != null;
+            sortButton.Label = desktopSource == null ? "" : "It was " + desktopSource + ", sort as a game";
+            LayoutSide();
+        }
+
+        private void StartRename()
+        {
+            if (sharing || file == null)
+            {
+                return;
+            }
+            renameBox.Text = Path.GetFileNameWithoutExtension(file.Path);
+            renameBox.Visible = true;
+            fileLabel.Visible = false;
+            LayoutSide();
+            renameBox.Focus();
+            renameBox.SelectAll();
+        }
+
+        // the extension stays, only the name before it changes
+        private void FinishRename(bool keep)
+        {
+            if (!renameBox.Visible)
+            {
+                return;
+            }
+            string name = renameBox.Text.Trim();
+            string current = Path.GetFileNameWithoutExtension(file.Path);
+            renameBox.Visible = false;
+            fileLabel.Visible = true;
+            LayoutSide();
+            if (!keep || name == "" || name == current)
+            {
+                return;
+            }
+            if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.EndsWith("."))
+            {
+                SetHighlightStatus("A name can't have \\ / : * ? \" < > | in it.", Theme.ErrorText);
+                return;
+            }
+            string target = Path.Combine(Path.GetDirectoryName(file.Path), name + Path.GetExtension(file.Path));
+            if (File.Exists(target))
+            {
+                SetHighlightStatus("There's already a file called that here.", Theme.ErrorText);
+                return;
+            }
+            string old = file.Path;
+            video?.Unload();
+            try
+            {
+                File.Move(old, target);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                SetHighlightStatus("Couldn't rename it: " + e.Message, Theme.ErrorText);
+                video?.Load(old);
+                return;
+            }
+            if (ClipCare.IsFavorite(ctx, old))
+            {
+                ClipCare.ToggleFavorite(ctx, old);
+                ClipCare.ToggleFavorite(ctx, target);
+            }
+            // the same object is in the folder list, so the gallery sees the new name too
+            file.Path = target;
+            file.Name = Path.GetFileName(target);
+            Open(files, file, nameLabel.Text);
+            SetHighlightStatus("Renamed.", Theme.Text);
+            FileRenamed?.Invoke();
+        }
+
+        // to the recycle bin, so a wrong click can be undone there
+        private void RemoveFile()
+        {
+            if (sharing)
+            {
+                return;
+            }
+            LibraryFile gone = file;
+            video?.Unload();
+            try
+            {
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(gone.Path,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is OperationCanceledException)
+            {
+                SetHighlightStatus("Couldn't delete it: " + e.Message, Theme.ErrorText);
+                video?.Load(gone.Path);
+                return;
+            }
+            if (ClipCare.IsFavorite(ctx, gone.Path))
+            {
+                ClipCare.ToggleFavorite(ctx, gone.Path);
+            }
+            FileGone?.Invoke(gone);
+        }
+
+        private void SortAsGame()
+        {
+            if (sharing || desktopSource == null)
+            {
+                return;
+            }
+            LibraryFile moved = file;
+            string game = desktopSource;
+            video?.Unload();
+            try
+            {
+                ClipCare.SortAsGame(ctx, Settings.Load(ctx).ClipsDir, game);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                SetHighlightStatus("Couldn't move it: " + e.Message, Theme.ErrorText);
+                video?.Load(moved.Path);
+                return;
+            }
+            FileGone?.Invoke(moved);
+        }
+
         private void ShowInFolder()
         {
             Process.Start("explorer.exe", "/select,\"" + file.Path + "\"")?.Dispose();
@@ -608,7 +933,7 @@ namespace SmartBuffer
 
         private void UploadClicked()
         {
-            UploadJob job = uploads.Get(file.Path);
+            UploadJob job = uploads.Get(UploadPath);
             if (job != null && job.State == UploadState.Deleting)
             {
                 return;
@@ -633,13 +958,41 @@ namespace SmartBuffer
                 settings.KappaNoticeSeen = true;
                 settings.Save(ctx);
             }
-            uploads.Start(file.Path, file.Size);
+            if (UploadSize > Uploader.MaxBytes)
+            {
+                ShrinkThenUpload();
+                return;
+            }
+            uploads.Start(UploadPath, UploadSize);
             UpdateUpload();
+        }
+
+        // over kappa.lol's 100 MB: a share copy first (trim and size from above, never over the cap), then that uploads
+        private void ShrinkThenUpload()
+        {
+            string source = file.Path;
+            TimeSpan start = trimStart, end = TrimEnd;
+            int picked = (int)((Choice)sizeCombo.SelectedItem).Value;
+            int limit = picked <= 0 || picked > UploadCopyMb ? UploadCopyMb : picked;
+            RunHighlightTask(status =>
+            {
+                ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
+                return ShareEncoder.Make(ctx, source, start, end, limit, p => status($"Making a smaller copy to upload... {p:P0}"));
+            }, made =>
+            {
+                uploadCopies[source] = made;
+                if (file != null && file.Path == source)
+                {
+                    uploads.Start(made, new FileInfo(made).Length);
+                    UpdateUpload();
+                }
+                return $"Uploading {Path.GetFileName(made)}, {Library.SizeText(new FileInfo(made).Length)}.";
+            });
         }
 
         private void OnUploadChanged(UploadJob job)
         {
-            if (file != null && job.Path == file.Path)
+            if (file != null && string.Equals(job.Path, UploadPath, StringComparison.OrdinalIgnoreCase))
             {
                 UpdateUpload();
             }
@@ -648,9 +1001,9 @@ namespace SmartBuffer
 
         private void UpdateUpload()
         {
-            UploadJob job = uploads.Get(file.Path);
+            UploadJob job = uploads.Get(UploadPath);
             UploadState state = job?.State ?? UploadState.Idle;
-            bool tooBig = file.Size > Uploader.MaxBytes;
+            bool tooBig = UploadSize > Uploader.MaxBytes;
             bool hasLink = state == UploadState.Done || state == UploadState.Deleting;
             shownState = state;
             showError = !string.IsNullOrEmpty(job?.Error) && (hasLink || state == UploadState.Failed);
@@ -667,8 +1020,10 @@ namespace SmartBuffer
             deleteButton.Enabled = state == UploadState.Done;
             deleteButton.Label = state == UploadState.Deleting ? "Deleting..." : DeleteLabel;
             cancelButton.Visible = state == UploadState.Uploading;
-            uploadButton.Enabled = state == UploadState.Done || (!tooBig && state != UploadState.Deleting);
-            uploadFine.Text = tooBig && state == UploadState.Idle ? "This file is too big, kappa.lol only takes up to 100 MB." : hasLink ? HostLine : IdleLine;
+            uploadButton.Enabled = state != UploadState.Deleting && !sharing;
+            uploadFine.Text = tooBig && state == UploadState.Idle
+                ? "Over kappa.lol's 100 MB limit, so a smaller copy is made first, using the trim and size above. " + HostLine
+                : hasLink ? HostLine : IdleLine;
             uploadError.Text = job?.Error ?? "";
 
             switch (state)
@@ -691,7 +1046,7 @@ namespace SmartBuffer
                     SetUploadButton("Retry", Icons.Retry);
                     break;
                 default:
-                    SetUploadButton(UploadLabel, Icons.Upload);
+                    SetUploadButton(tooBig ? "Shrink and upload to kappa.lol" : UploadLabel, Icons.Upload);
                     break;
             }
             LayoutSide();

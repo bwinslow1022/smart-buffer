@@ -41,7 +41,7 @@ namespace SmartBuffer
         private readonly LibraryTab recordingsTab = new LibraryTab("Recordings", Icons.Video);
         private readonly SidebarRow recordRow = new SidebarRow("Record") { Clickable = true, Card = true, Tint = Theme.Danger };
         private readonly SidebarRow replayRow = new SidebarRow("Instant Replay") { Icon = Icons.History, Card = true, Tint = Theme.Accent };
-        private readonly SidebarRow shotRow = new SidebarRow("Screenshot") { Icon = Icons.Photo, Clickable = true, Trail = Icons.Camera, Card = true, Tint = Theme.Sky };
+        private readonly SidebarRow shotRow = new SidebarRow("Screenshot") { Icon = Icons.Photo, Clickable = true, Trail = Icons.Camera, Card = true, Tint = Theme.Pink };
         private readonly SidebarRow micRow = new SidebarRow("Microphone") { Icon = Icons.Mic, Card = true, Tint = Theme.Mint };
         private readonly ToggleSwitch replaySwitch = new ToggleSwitch { BackColor = Theme.Panel };
         private readonly ToggleSwitch micSwitch = new ToggleSwitch { OnColor = Theme.Mint };
@@ -73,9 +73,9 @@ namespace SmartBuffer
             saved = Settings.Load(ctx);
             previousWindow = GetForegroundWindow();
 
-            // opening on a different monitor than the main one needs that monitor's scale from the start
-            Ui.UseMonitorOf(previousWindow);
-            screen = (previousWindow != IntPtr.Zero ? Screen.FromHandle(previousWindow) : Screen.PrimaryScreen).Bounds;
+            // always the main monitor, wherever the mouse or the game is
+            Ui.UseMainMonitor();
+            screen = Screen.PrimaryScreen.Bounds;
 
             Text = Context.AppName;
             AutoScaleMode = AutoScaleMode.None;
@@ -218,7 +218,7 @@ namespace SmartBuffer
             protected override void OnPaint(PaintEventArgs e)
             {
                 Graphics graphics = e.Graphics;
-                // the glow fades out before the buttons on the right, they sit on plain panel colour
+                // the glow fades out before the buttons on the right, they sit on plain panel color
                 graphics.Clear(Theme.Panel);
                 var glowBox = new Rectangle(0, 0, Width * 3 / 5, Height);
                 using (var glow = new LinearGradientBrush(glowBox, Theme.Mix(Theme.Panel, Theme.Accent, 0.28F), Theme.Panel, LinearGradientMode.Horizontal))
@@ -343,11 +343,37 @@ namespace SmartBuffer
             recent.Picked += (folder, file) =>
             {
                 EnsureGallery();
-                gallery.ShowClip(folder, file);
+                gallery.ShowClip(folder, file, LibraryKind.Clips);
                 UpdateTabs();
             };
             cache.Updated += recent.Invalidate;
             Controls.Add(recent);
+            LoadRecent();
+        }
+
+        /// Straight to a saved file, from a click on the "saved" card.
+        public void OpenSaved(string path)
+        {
+            Settings current = Settings.Load(ctx);
+            LibraryKind kind = path.StartsWith(current.RecordingsDir, StringComparison.OrdinalIgnoreCase) ? LibraryKind.Recordings : LibraryKind.Clips;
+            string root = kind == LibraryKind.Recordings ? current.RecordingsDir : current.ClipsDir;
+            foreach (LibraryFolder folder in Library.Scan(root, null))
+            {
+                LibraryFile file = folder.Files.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+                if (file != null)
+                {
+                    EnsureGallery();
+                    gallery.ShowClip(folder, file, kind);
+                    UpdateTabs();
+                    return;
+                }
+            }
+            OpenTab(kind);
+        }
+
+        // after a delete or rename in the player, so the grid never points at a file that's gone
+        public void RefreshRecent()
+        {
             LoadRecent();
         }
 

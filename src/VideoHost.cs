@@ -37,6 +37,17 @@ namespace SmartBuffer
         private DesktopWindowTarget target;
         private MediaPlayer player;
         private MediaPlayerSurface surface;
+        private bool previewing;
+
+        /// Muted, looping, from a third of the way in, no play badge. For hovering a clip in the library.
+        public void LoadPreview(string path)
+        {
+            Load(path);
+            previewing = true;
+            badge.Visible = false;
+            player.Volume = 0;
+            player.IsLoopingEnabled = true;
+        }
 
         public event Action Clicked;
         public event Action Finished;
@@ -78,6 +89,7 @@ namespace SmartBuffer
         public void Load(string path)
         {
             Unload();
+            previewing = false;
             HasFailed = false;
             problem.Visible = false;
             badge.Visible = true;
@@ -87,6 +99,13 @@ namespace SmartBuffer
             MediaPlayer current = player;
             player.MediaOpened += (_, __) => OnUi(current, () =>
             {
+                if (previewing)
+                {
+                    current.PlaybackSession.Position = TimeSpan.FromTicks(current.PlaybackSession.NaturalDuration.Ticks / 3);
+                    current.Play();
+                    Playing = true;
+                    return;
+                }
                 current.PlaybackSession.Position = TimeSpan.Zero; // a seek draws the first frame instead of black
                 Opened?.Invoke();
             });
@@ -101,7 +120,7 @@ namespace SmartBuffer
                 HasFailed = true;
                 Playing = false;
                 badge.Visible = false;
-                problem.Visible = true;
+                problem.Visible = !previewing;
                 Failed?.Invoke();
             });
             player.Source = MediaSource.CreateFromUri(new Uri(path));
@@ -124,6 +143,25 @@ namespace SmartBuffer
                 Playing = true;
                 badge.Visible = false;
             }
+        }
+
+        // pauses on the next or previous frame, the play badge stays hidden so the frame can be seen
+        public void StepFrame(bool forward)
+        {
+            if (player == null || HasFailed)
+            {
+                return;
+            }
+            if (forward)
+            {
+                player.StepForwardOneFrame();
+            }
+            else
+            {
+                player.StepBackwardOneFrame();
+            }
+            Playing = false;
+            badge.Visible = false;
         }
 
         public void Pause()

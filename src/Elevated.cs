@@ -45,7 +45,7 @@ namespace SmartBuffer
             }
             catch (Win32Exception e) when (e.NativeErrorCode == 1223)
             {
-                throw new SetupException("This needs admin approval. Nothing was changed.", cancelled: true);
+                throw new SetupException("This needs admin approval. Nothing was changed.", canceled: true);
             }
 
             string result = File.Exists(resultFile) ? File.ReadAllText(resultFile).Trim() : "The admin step didn't finish.";

@@ -11,6 +11,7 @@ int WideCharToMultiByte(unsigned int, unsigned long, const wchar_t *, int, char 
 int PlaySoundW(const wchar_t *, void *, unsigned long);
 void *GetForegroundWindow(void);
 int InternalGetWindowText(void *, wchar_t *, int);
+int GetClassNameW(void *, wchar_t *, int);
 int GetWindowRect(void *, SMARTBUFFER_RECT *);
 void *MonitorFromWindow(void *, unsigned long);
 int GetMonitorInfoW(void *, SMARTBUFFER_MONITORINFO *);
@@ -40,6 +41,24 @@ local MOVE_WAIT_MS = 120000
 local OUTPUT_SECTION = "AdvOut"
 local OUTPUT_PATH_KEY = "RecFilePath"
 
+-- fullscreen capture also grabs browsers and apps, their window titles make junk folders
+local NOT_GAMES = {
+    ["chrome"] = true, ["msedge"] = true, ["firefox"] = true, ["brave"] = true, ["opera"] = true,
+    ["opera_gx"] = true, ["vivaldi"] = true, ["arc"] = true, ["iexplore"] = true,
+    ["discord"] = true, ["spotify"] = true, ["code"] = true, ["claude"] = true, ["slack"] = true,
+    ["teams"] = true, ["ms-teams"] = true, ["explorer"] = true, ["notepad"] = true,
+    ["windowsterminal"] = true, ["cmd"] = true, ["powershell"] = true, ["pwsh"] = true,
+    ["vlc"] = true, ["mpv"] = true, ["obs64"] = true, ["steamwebhelper"] = true,
+    ["smart buffer"] = true, ["smartbuffer"] = true,
+}
+-- the same apps by window class, for desktop capture where only the window is known
+-- (chrome, edge and every electron app like discord, spotify and vs code share the first one)
+local NOT_GAME_CLASSES = {
+    ["Chrome_WidgetWin_1"] = true, ["MozillaWindowClass"] = true, ["CabinetWClass"] = true,
+    ["ConsoleWindowClass"] = true, ["CASCADIA_HOSTING_WINDOW_CLASS"] = true,
+    ["ApplicationFrameWindow"] = true, ["Notepad"] = true, ["mpv"] = true,
+}
+
 local capture_game = true
 local sort_by_game = true
 local save_sound = true
@@ -56,6 +75,8 @@ local quit_tries = 0
 local sound_file = nil
 local command_file = nil
 local status_file = nil
+local games_file = nil
+local sources_file = nil
 local record_started = 0
 local record_game = nil
 local shot_game = nil
@@ -66,6 +87,7 @@ local moves = {}
 local saved_count = 0
 local saved_kind = ""
 local saved_game = ""
+local saved_path = ""
 
 local function wide(text)
     local size = ffi.C.MultiByteToWideChar(CP_UTF8, 0, text, -1, nil, 0)
@@ -74,10 +96,7 @@ local function wide(text)
     return buffer
 end
 
--- this one never messages the window, so it can't deadlock against a closing obs
-local function window_title(window)
-    local buffer = ffi.new("wchar_t[256]")
-    local length = ffi.C.InternalGetWindowText(window, buffer, 256)
+local function narrow(buffer, length)
     if length <= 0 then
         return ""
     end
@@ -85,6 +104,21 @@ local function window_title(window)
     local text = ffi.new("char[?]", size)
     ffi.C.WideCharToMultiByte(CP_UTF8, 0, buffer, length, text, size, nil, nil)
     return ffi.string(text, size)
+end
+
+-- this one never messages the window, so it can't deadlock against a closing obs
+local function window_title(window)
+    local buffer = ffi.new("wchar_t[256]")
+    return narrow(buffer, ffi.C.InternalGetWindowText(window, buffer, 256))
+end
+
+local function window_class(window)
+    local buffer = ffi.new("wchar_t[256]")
+    return narrow(buffer, ffi.C.GetClassNameW(window, buffer, 256))
+end
+
+local function is_app_exe(exe)
+    return NOT_GAMES[exe:lower():gsub("%.exe$", "")] == true
 end
 
 local function clean_name(name)
@@ -112,11 +146,38 @@ local function game_name(title, exe)
     return clean_name((exe:gsub("%.[eE][xX][eE]$", "")))
 end
 
+-- names the user marked as games from the player, they win over every other rule
+local function marked_games()
+    local set = {}
+    local text = obs.os_file_exists(games_file) and obs.os_quick_read_utf8_file(games_file) or ""
+    for line in text:gmatch("[^\r\n]+") do
+        set[line] = true
+    end
+    return set
+end
+
+-- whatever is in front, game or not, so a desktop clip can later be sorted with one click
+local function foreground_name()
+    local window = ffi.C.GetForegroundWindow()
+    if window == nil then
+        return nil
+    end
+    local title = window_title(window)
+    if title == "" or title == "Program Manager" or title:match("^OBS %d") then
+        return nil
+    end
+    return game_name(title, "")
+end
+
 -- only reads the window title so desktop capture never opens the game process
 local function foreground_game()
     local window = ffi.C.GetForegroundWindow()
     if window == nil then
         return nil
+    end
+    local name = foreground_name()
+    if name ~= nil and marked_games()[name] then
+        return name
     end
     local rect = ffi.new("SMARTBUFFER_RECT")
     local info = ffi.new("SMARTBUFFER_MONITORINFO")
@@ -131,7 +192,7 @@ local function foreground_game()
         return nil
     end
     local title = window_title(window)
-    if title == "Program Manager" then
+    if title == "Program Manager" or NOT_GAME_CLASSES[window_class(window)] then
         return nil
     end
     return game_name(title, "")
@@ -158,14 +219,16 @@ local function write_status()
         .. "\ngame=" .. (game or "")
         .. "\nsaved=" .. saved_count
         .. "\nsavedkind=" .. saved_kind
-        .. "\nsavedgame=" .. saved_game .. "\n"
+        .. "\nsavedgame=" .. saved_game
+        .. "\nsavedpath=" .. saved_path .. "\n"
     obs.os_quick_write_utf8_file(status_file, text, #text, false)
 end
 
 local function on_hooked(data)
     local title = obs.calldata_string(data, "title") or ""
     local exe = obs.calldata_string(data, "executable") or ""
-    game = game_name(title, exe)
+    -- still captured, it just isn't a game, so its clips go to Desktop
+    game = not is_app_exe(exe) and game_name(title, exe) or nil
     desktop_visible = false
     status_dirty = true
 end
@@ -213,7 +276,29 @@ local function move_into_game_folder(path, folder, prefix)
     local stamp = name:gsub("^" .. prefix .. "%s*", "")
     local target_dir = dir .. "/" .. folder
     obs.os_mkdirs(target_dir)
-    moves[#moves + 1] = { path = path, target = target_dir .. "/" .. folder .. " " .. stamp, wait = 0 }
+    local target = target_dir .. "/" .. folder .. " " .. stamp
+    moves[#moves + 1] = { path = path, target = target, wait = 0 }
+    return target
+end
+
+-- remembers which window a desktop clip came from, the player offers to sort it as that game
+local function note_desktop_source(target)
+    if target == nil then
+        return
+    end
+    local name = foreground_name()
+    if name == nil then
+        return
+    end
+    local lines = {}
+    local old = obs.os_file_exists(sources_file) and obs.os_quick_read_utf8_file(sources_file) or ""
+    for line in old:gmatch("[^\r\n]+") do
+        lines[#lines + 1] = line
+    end
+    lines[#lines + 1] = target:match("([^/\\]+)$") .. "\t" .. name
+    -- quick write can't append, so the file is rewritten, keeping only recent clips
+    local text = table.concat(lines, "\n", math.max(1, #lines - 499)) .. "\n"
+    obs.os_quick_write_utf8_file(sources_file, text, #text, false)
 end
 
 -- obs says a recording stopped while it's still finishing the file, so this keeps trying
@@ -268,10 +353,12 @@ local function set_mic(on)
     status_dirty = true
 end
 
-local function note_saved(kind, folder)
+-- path is where the file ends up, so a click on the saved card can open it
+local function note_saved(kind, folder, path)
     saved_count = saved_count + 1
     saved_kind = kind
     saved_game = folder or ""
+    saved_path = (path or ""):gsub("\\", "/")
     -- written straight away instead of on the next timer tick, so the saved card shows sooner
     write_status()
     status_dirty = false
@@ -280,8 +367,12 @@ end
 local function on_event(event)
     if event == obs.OBS_FRONTEND_EVENT_REPLAY_BUFFER_SAVED then
         local folder = game or foreground_game() or DESKTOP_FOLDER
-        move_into_game_folder(obs.obs_frontend_get_last_replay(), folder, "Replay")
-        note_saved("clip", folder)
+        local last = obs.obs_frontend_get_last_replay()
+        local target = move_into_game_folder(last, folder, "Replay")
+        if folder == DESKTOP_FOLDER then
+            note_desktop_source(target)
+        end
+        note_saved("clip", folder, target or last)
         play_sound()
     elseif event == obs.OBS_FRONTEND_EVENT_REPLAY_BUFFER_STARTED
         or event == obs.OBS_FRONTEND_EVENT_REPLAY_BUFFER_STOPPED then
@@ -294,15 +385,15 @@ local function on_event(event)
     elseif event == obs.OBS_FRONTEND_EVENT_RECORDING_STOPPED then
         restore_clips_path()
         local folder = record_game or game or foreground_game() or DESKTOP_FOLDER
-        move_into_game_folder(obs.obs_frontend_get_last_recording(), folder, "")
-        note_saved("recording", folder)
+        local last = obs.obs_frontend_get_last_recording()
+        note_saved("recording", folder, move_into_game_folder(last, folder, "") or last)
         record_started = 0
         record_game = nil
         status_dirty = true
         play_sound()
     elseif event == obs.OBS_FRONTEND_EVENT_SCREENSHOT_TAKEN then
-        move_into_game_folder(obs.obs_frontend_get_last_screenshot(), shot_game or DESKTOP_FOLDER, "Screenshot")
-        note_saved("screenshot", shot_game or DESKTOP_FOLDER)
+        local last = obs.obs_frontend_get_last_screenshot()
+        note_saved("screenshot", shot_game or DESKTOP_FOLDER, move_into_game_folder(last, shot_game or DESKTOP_FOLDER, "Screenshot") or last)
         shot_game = nil
         play_sound()
     end
@@ -412,6 +503,8 @@ function script_load(settings)
     sound_file = script_path() .. "saved.wav"
     command_file = script_path() .. "command.txt"
     status_file = script_path() .. "status.txt"
+    games_file = script_path() .. "games.txt"
+    sources_file = script_path() .. "desktop-sources.txt"
 
     obs.obs_frontend_add_event_callback(on_event)
     obs.timer_add(check_commands, COMMAND_MS)

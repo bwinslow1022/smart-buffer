@@ -90,6 +90,15 @@ namespace SmartBuffer
             AddToggleRow(panel, ref y, "Sound when saved", draft.SaveSound, value => draft.SaveSound = value);
             AddToggleRow(panel, ref y, "Notification when saved", draft.SaveNotification, value => draft.SaveNotification = value);
             AddToggleRow(panel, ref y, "Sort by game", draft.SortByGame, value => draft.SortByGame = value);
+            AddRow(panel, ref y, "Clips folder limit", NewCombo(new[]
+            {
+                new Choice("Off, never delete", 0),
+                new Choice("50 GB", 50),
+                new Choice("100 GB", 100),
+                new Choice("200 GB", 200),
+                new Choice("500 GB", 500),
+            }, draft.StorageLimitGb, value => draft.StorageLimitGb = (int)value));
+            panel.Controls.Add(NewLabel("Over the limit, the oldest clips are deleted for good. Favorites are never deleted.", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(40)), Theme.Muted, 11.75F));
             return panel;
         }
 
@@ -193,7 +202,7 @@ namespace SmartBuffer
             AddRow(panel, ref y, "Game and desktop audio", NewCombo(outputs.ToArray(), draft.DesktopDevice, value => draft.DesktopDevice = (string)value));
 
             AddToggleRow(panel, ref y, "Separate audio tracks", draft.SeparateTracks, value => draft.SeparateTracks = value);
-            panel.Controls.Add(NewLabel("Keeps a mix plus separate desktop and mic tracks for editing. Windows players and the preview may only play one of them, so leave this off unless you edit.", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(60)), Theme.Muted, 11.75F));
+            panel.Controls.Add(NewLabel("Keeps the full mix as the first track, plus separate game and mic tracks. Find highlights uses them to tell your reactions apart from the game.", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(60)), Theme.Muted, 11.75F));
             return panel;
         }
 

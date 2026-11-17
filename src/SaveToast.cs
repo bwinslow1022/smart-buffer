@@ -9,7 +9,7 @@ namespace SmartBuffer
     // It never takes focus and clicks pass through it, so it can't interrupt a game.
     public sealed class SaveToast : Form
     {
-        private const int ShowMs = 2600;
+        private const int ShowMs = 4000;
         private const int FadeMs = 220;
         private const int FrameMs = 15;
         private const int EdgeGap = 24;
@@ -24,6 +24,7 @@ namespace SmartBuffer
         private readonly string title;
         private readonly string detail;
         private readonly string icon;
+        private Action clicked;
         private readonly Timer timer = new Timer { Interval = FrameMs };
         private DateTime shownAt;
 
@@ -42,7 +43,7 @@ namespace SmartBuffer
         }
 
         /// Shows the card, replacing one that's still on screen.
-        public static void Show(string title, string detail, string icon)
+        public static void Show(string title, string detail, string icon, Action clicked = null)
         {
             current?.Close();
             IntPtr game = GetForegroundWindow();
@@ -52,6 +53,8 @@ namespace SmartBuffer
             toast.Size = new Size(Ui.S(300), Ui.S(64));
             toast.Location = new Point(area.Right - toast.Width - Ui.S(EdgeGap), area.Top + Ui.S(EdgeGap));
             current = toast;
+            toast.clicked = clicked;
+            toast.Cursor = clicked != null ? Cursors.Hand : Cursors.Default;
             toast.shownAt = DateTime.UtcNow;
             ShowWindow(toast.Handle, 4); // SW_SHOWNOACTIVATE
             SetWindowPos(toast.Handle, TopmostHandle, 0, 0, 0, 0, NoSize | NoMove | NoActivate | ShowWindowFlag);
@@ -65,7 +68,7 @@ namespace SmartBuffer
             get
             {
                 CreateParams p = base.CreateParams;
-                p.ExStyle |= ExTopmost | ExTransparent | ExToolWindow | ExLayered | ExNoActivate;
+                p.ExStyle |= ExTopmost | ExToolWindow | ExLayered | ExNoActivate;
                 return p;
             }
         }
@@ -95,6 +98,17 @@ namespace SmartBuffer
             else
             {
                 Close();
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (e.Button == MouseButtons.Left && clicked != null)
+            {
+                Action open = clicked;
+                Close();
+                open();
             }
         }
 
