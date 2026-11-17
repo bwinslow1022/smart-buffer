@@ -9,18 +9,25 @@ namespace SmartBuffer
     // the settings tabs, opened from the gear
     public sealed class SettingsPanel : Panel
     {
-        public const int PageWidth = 540;
-        public const int PageHeight = 460;
+        public const int PageWidth = 600;
+        public const int PageHeight = PanelTop + PanelHeight + FooterHeight;
 
         private const int Inset = 24;
-        private const int TabTop = 12;
-        private const int TabHeight = 34;
-        private const int PanelTop = 56;
-        private const int PanelHeight = 324;
-        private const int LabelWidth = 170;
-        private const int ControlLeft = 180;
-        private const int ControlWidth = 308;
-        private const int RowHeight = 36;
+        private const int TabTop = 14;
+        private const int TabHeight = 36;
+        private const int PanelTop = 64;
+        private const int PanelHeight = 548;
+        private const int FooterHeight = 64;
+        private const int CardPad = 16;
+        private const int ControlWidth = 230;
+        private const int SectionGap = 14;
+        private const int HeaderHeight = 26;
+
+        // bitrates the quality slider stops at, finer where the differences are easiest to see
+        private static readonly int[] QualitySteps = Enumerable.Range(5, 26)
+            .Concat(Enumerable.Range(0, 10).Select(i => 32 + i * 2))
+            .Concat(Enumerable.Range(0, 10).Select(i => 55 + i * 5))
+            .ToArray();
 
         private readonly Context ctx;
         private readonly Settings draft;
@@ -49,6 +56,7 @@ namespace SmartBuffer
             saved = Settings.Load(ctx);
             BackColor = Theme.Background;
             Font = Ui.Text(13);
+            DoubleBuffered = true;
 
             AddTab("Clips", BuildClipsTab());
             AddTab("Video", BuildVideoTab());
@@ -57,17 +65,31 @@ namespace SmartBuffer
             AddTab("Startup", BuildStartupTab());
             SelectTab(0);
 
-            messageLabel = NewLabel("", new Point(Ui.S(Inset), Ui.S(PanelTop + PanelHeight + 6)), new Size(Ui.S(360), Ui.S(44)), Theme.Muted, 12);
+            int footer = Ui.S(PanelTop + PanelHeight + 12);
+            messageLabel = NewLabel("", new Point(Ui.S(Inset), footer), new Size(Ui.S(PageWidth - Inset * 2 - 130), Ui.S(40)), Theme.Muted, 12);
+            messageLabel.TextAlign = ContentAlignment.MiddleLeft;
             Controls.Add(messageLabel);
 
             applyButton = new ActionButton("Apply", null, true)
             {
-                Location = new Point(Ui.S(PageWidth - Inset - 120), Ui.S(PanelTop + PanelHeight + 8)),
-                Size = new Size(Ui.S(120), Ui.S(40)),
+                Location = new Point(Ui.S(PageWidth - Inset - 110), footer),
+                Size = new Size(Ui.S(110), Ui.S(38)),
             };
             applyButton.Click += (_, __) => ApplyChanges();
             Controls.Add(applyButton);
             UpdateDirty();
+        }
+
+        // the tabs sit in one rounded track, like the clips/recordings switch on the dock
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Ui.FillRound(e.Graphics, Theme.Panel, new Rectangle(Ui.S(Inset), Ui.S(TabTop) - Ui.S(4), Ui.S(PageWidth - Inset * 2), Ui.S(TabHeight + 8)), Ui.S(10));
+            using (var pen = new Pen(Theme.Border))
+            {
+                int line = Ui.S(PanelTop + PanelHeight + 2);
+                e.Graphics.DrawLine(pen, 0, line, Width, line);
+            }
         }
 
         private Panel BuildClipsTab()
@@ -75,7 +97,8 @@ namespace SmartBuffer
             Panel panel = NewPage();
             int y = 0;
 
-            AddRow(panel, ref y, "Clip length", NewCombo(new[]
+            Card saving = AddCard(panel, ref y, "Saving");
+            AddRow(saving, "Clip length", "How far back a saved clip goes.", NewCombo(new[]
             {
                 new Choice("30 seconds", 30),
                 new Choice("1 minute", 60),
@@ -84,21 +107,19 @@ namespace SmartBuffer
                 new Choice("5 minutes", 300),
                 new Choice("10 minutes", 600),
             }, draft.ClipSeconds, value => draft.ClipSeconds = (int)value));
+            AddFolderRow(saving, "Clips folder", "Where should clips be saved?", draft.ClipsDir, value => draft.ClipsDir = value);
+            AddFolderRow(saving, "Recordings folder", "Where should recordings be saved?", draft.RecordingsDir, value => draft.RecordingsDir = value);
+            EndCard(saving, ref y);
 
-            AddFolderRow(panel, ref y, "Save clips to", "Where should clips be saved?", draft.ClipsDir, value => draft.ClipsDir = value);
-            AddFolderRow(panel, ref y, "Save recordings to", "Where should recordings be saved?", draft.RecordingsDir, value => draft.RecordingsDir = value);
-            AddToggleRow(panel, ref y, "Sound when saved", draft.SaveSound, value => draft.SaveSound = value);
-            AddToggleRow(panel, ref y, "Notification when saved", draft.SaveNotification, value => draft.SaveNotification = value);
-            AddToggleRow(panel, ref y, "Sort by game", draft.SortByGame, value => draft.SortByGame = value);
-            AddRow(panel, ref y, "Clips folder limit", NewCombo(new[]
-            {
-                new Choice("Off, never delete", 0),
-                new Choice("50 GB", 50),
-                new Choice("100 GB", 100),
-                new Choice("200 GB", 200),
-                new Choice("500 GB", 500),
-            }, draft.StorageLimitGb, value => draft.StorageLimitGb = (int)value));
-            panel.Controls.Add(NewLabel("Over the limit, the oldest clips are deleted for good. Favorites are never deleted.", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(40)), Theme.Muted, 11.75F));
+            Card after = AddCard(panel, ref y, "When something saves");
+            AddToggleRow(after, "Play a sound", "Handy in fullscreen games, where pop-ups can't show.", draft.SaveSound, value => draft.SaveSound = value);
+            AddToggleRow(after, "Show a pop-up", "Click it to open what was saved.", draft.SaveNotification, value => draft.SaveNotification = value);
+            AddToggleRow(after, "Sort into game folders", "Anything without a game goes in Desktop.", draft.SortByGame, value => draft.SortByGame = value);
+            EndCard(after, ref y);
+
+            Card storage = AddCard(panel, ref y, "Storage");
+            AddLimitRow(storage);
+            EndCard(storage, ref y);
             return panel;
         }
 
@@ -107,7 +128,8 @@ namespace SmartBuffer
             Panel panel = NewPage();
             int y = 0;
 
-            AddRow(panel, ref y, "Capture", NewCombo(new[]
+            Card capture = AddCard(panel, ref y, "Capture");
+            captureHelp = AddRow(capture, "Capture", " \n ", NewCombo(new[]
             {
                 new Choice("Game capture", Settings.CaptureGame),
                 new Choice("Desktop capture", Settings.CaptureDesktop),
@@ -117,10 +139,6 @@ namespace SmartBuffer
                 UpdateCaptureHelp();
             }));
 
-            captureHelp = NewLabel("", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(52)), Theme.Muted, 11.75F);
-            panel.Controls.Add(captureHelp);
-            y += Ui.S(54);
-
             List<DisplayInfo> displays = SystemInfo.AllDisplays();
             DisplayInfo primary = displays.FirstOrDefault(d => d.IsPrimary);
             Choice[] monitors = displays
@@ -128,20 +146,20 @@ namespace SmartBuffer
                 .ToArray();
             string currentMonitor = string.IsNullOrEmpty(draft.MonitorId) ? primary?.MonitorId : draft.MonitorId;
             monitorCombo = NewCombo(monitors, currentMonitor, value => draft.MonitorId = (string)value);
-            AddRow(panel, ref y, "Monitor to record", monitorCombo);
+            AddRow(capture, "Monitor", "Only used by desktop capture.", monitorCombo);
+            EndCard(capture, ref y);
 
-            AddRow(panel, ref y, "Quality", NewCombo(new[]
+            Card quality = AddCard(panel, ref y, "Quality");
+            var slider = new StepSlider(QualitySteps, mbps => mbps + " Mbps") { Value = draft.Quality / 1000 };
+            Label qualityHelp = AddRow(quality, "Bitrate", QualityText(slider.Value), slider);
+            slider.Changed += () =>
             {
-                new Choice("Highest (big files)", 16),
-                new Choice("High", 20),
-                new Choice("Medium", 24),
-                new Choice("Low (small files)", 28),
-                new Choice("35 Mbps (sharper than ShadowPlay)", 35000),
-                new Choice("20 Mbps (like ShadowPlay, ~150 MB/min)", 20000),
-                new Choice("12 Mbps (smaller, ~90 MB/min)", 12000),
-            }, draft.Quality, value => draft.Quality = (int)value));
+                draft.Quality = slider.Value * 1000;
+                qualityHelp.Text = QualityText(slider.Value);
+                UpdateDirty();
+            };
 
-            AddRow(panel, ref y, "Frame rate", NewCombo(new[]
+            AddRow(quality, "Frame rate", null, NewCombo(new[]
             {
                 new Choice("30 fps", 30),
                 new Choice("60 fps", 60),
@@ -157,27 +175,39 @@ namespace SmartBuffer
                     resolutions.Add(new Choice(height + "p", height));
                 }
             }
-            AddRow(panel, ref y, "Resolution", NewCombo(resolutions.ToArray(), draft.OutputHeight, value => draft.OutputHeight = (int)value));
+            AddRow(quality, "Resolution", null, NewCombo(resolutions.ToArray(), draft.OutputHeight, value => draft.OutputHeight = (int)value));
 
             State state = State.Load(ctx);
             var codecs = new List<Choice>();
             if (state.EncoderBrand != Encoders.BrandCpu)
             {
-                codecs.Add(new Choice("H.264 (plays everywhere)", Encoders.CodecH264));
+                codecs.Add(new Choice("H.264, plays everywhere", Encoders.CodecH264));
                 if (state.SupportsHevc)
                 {
-                    codecs.Add(new Choice("HEVC (smaller files)", Encoders.CodecHevc));
+                    codecs.Add(new Choice("HEVC, smaller files", Encoders.CodecHevc));
                 }
                 if (state.SupportsAv1)
                 {
-                    codecs.Add(new Choice("AV1 (smallest, less compatible)", Encoders.CodecAv1));
+                    codecs.Add(new Choice("AV1, smallest files", Encoders.CodecAv1));
                 }
             }
-            codecs.Add(new Choice("CPU x264 (slowest)", Encoders.CodecCpu));
-            AddRow(panel, ref y, "Encoder", NewCombo(codecs.ToArray(), draft.Codec, value => draft.Codec = (string)value));
+            codecs.Add(new Choice("CPU x264, slowest", Encoders.CodecCpu));
+            AddRow(quality, "Encoder", "H.264 previews right in Discord.", NewCombo(codecs.ToArray(), draft.Codec, value => draft.Codec = (string)value));
+            EndCard(quality, ref y);
 
             UpdateCaptureHelp();
             return panel;
+        }
+
+        // a minute of video at this bitrate, and what it compares to
+        private static string QualityText(int mbps)
+        {
+            string tier = mbps < 10 ? "Small, blurry in fast scenes."
+                : mbps < 18 ? "Fine for 1080p."
+                : mbps <= 25 ? "About what ShadowPlay uses."
+                : mbps <= 45 ? "Sharper than ShadowPlay."
+                : "Near lossless, very big files.";
+            return $"About {mbps * 60 / 8} MB per minute. {tier}";
         }
 
         private Panel BuildAudioTab()
@@ -185,24 +215,25 @@ namespace SmartBuffer
             Panel panel = NewPage();
             int y = 0;
 
+            Card mic = AddCard(panel, ref y, "Microphone");
             var mics = new List<Choice> { new Choice("Windows default", Settings.DeviceDefault) };
             mics.AddRange(AudioDevices.Microphones().Select(d => new Choice(d.Name, d.Id)));
-            AddRow(panel, ref y, "Microphone", NewCombo(mics.ToArray(), draft.MicDevice, value => draft.MicDevice = (string)value));
-
-            AddRow(panel, ref y, "Mic noise suppression", NewCombo(new[]
+            AddRow(mic, "Microphone", "Turn it on and off from the overlay.", NewCombo(mics.ToArray(), draft.MicDevice, value => draft.MicDevice = (string)value));
+            AddRow(mic, "Noise suppression", "Removes fan and keyboard noise.", NewCombo(new[]
             {
                 new Choice("Off", Settings.NoiseOff),
-                new Choice("RNNoise (better quality, more CPU)", Settings.NoiseRnnoise),
-                new Choice("Speex (lower quality, less CPU)", Settings.NoiseSpeex),
+                new Choice("RNNoise, sounds best", Settings.NoiseRnnoise),
+                new Choice("Speex, lightest on CPU", Settings.NoiseSpeex),
             }, draft.NoiseSuppression, value => draft.NoiseSuppression = (string)value));
+            EndCard(mic, ref y);
 
+            Card game = AddCard(panel, ref y, "Game audio");
             var outputs = new List<Choice> { new Choice("Windows default", Settings.DeviceDefault) };
             outputs.AddRange(AudioDevices.Outputs().Select(d => new Choice(d.Name, d.Id)));
             outputs.Add(new Choice("Off", Settings.DeviceOff));
-            AddRow(panel, ref y, "Game and desktop audio", NewCombo(outputs.ToArray(), draft.DesktopDevice, value => draft.DesktopDevice = (string)value));
-
-            AddToggleRow(panel, ref y, "Separate audio tracks", draft.SeparateTracks, value => draft.SeparateTracks = value);
-            panel.Controls.Add(NewLabel("Keeps the full mix as the first track, plus separate game and mic tracks. Find highlights uses them to tell your reactions apart from the game.", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(60)), Theme.Muted, 11.75F));
+            AddRow(game, "Game and desktop audio", null, NewCombo(outputs.ToArray(), draft.DesktopDevice, value => draft.DesktopDevice = (string)value));
+            AddToggleRow(game, "Separate audio tracks", "Game and mic on their own tracks too, so Find highlights can tell your reactions apart. Recordings lost in a crash can't be recovered with this on.", draft.SeparateTracks, value => draft.SeparateTracks = value);
+            EndCard(game, ref y);
             return panel;
         }
 
@@ -211,13 +242,16 @@ namespace SmartBuffer
             Panel panel = NewPage();
             int y = 0;
 
-            AddHotkeyRow(panel, ref y, "Save clip", draft.SaveHotkey, false, false, value => draft.SaveHotkey = value);
-            AddHotkeyRow(panel, ref y, "Open overlay", draft.OverlayHotkey, false, true, value => draft.OverlayHotkey = value);
-            AddHotkeyRow(panel, ref y, "Record", draft.RecordHotkey, true, true, value => draft.RecordHotkey = value);
-            AddHotkeyRow(panel, ref y, "Screenshot", draft.ScreenshotHotkey, true, true, value => draft.ScreenshotHotkey = value);
-            AddHotkeyRow(panel, ref y, "Instant Replay on/off", draft.ReplayHotkey, true, true, value => draft.ReplayHotkey = value);
-            AddHotkeyRow(panel, ref y, "Microphone on/off", draft.MicHotkey, true, true, value => draft.MicHotkey = value);
-            panel.Controls.Add(NewLabel("While Smart Buffer runs, these combos belong to it, so a game that also uses one won't see the key. Press Delete in a box to turn one off.", new Point(0, y + Ui.S(8)), new Size(Ui.S(488), Ui.S(44)), Theme.Muted, 11.75F));
+            Card keys = AddCard(panel, ref y, "Hotkeys");
+            AddHotkeyRow(keys, "Save clip", draft.SaveHotkey, false, false, value => draft.SaveHotkey = value);
+            AddHotkeyRow(keys, "Open overlay", draft.OverlayHotkey, false, true, value => draft.OverlayHotkey = value);
+            AddHotkeyRow(keys, "Record", draft.RecordHotkey, true, true, value => draft.RecordHotkey = value);
+            AddHotkeyRow(keys, "Screenshot", draft.ScreenshotHotkey, true, true, value => draft.ScreenshotHotkey = value);
+            AddHotkeyRow(keys, "Instant Replay on/off", draft.ReplayHotkey, true, true, value => draft.ReplayHotkey = value);
+            AddHotkeyRow(keys, "Microphone on/off", draft.MicHotkey, true, true, value => draft.MicHotkey = value);
+            EndCard(keys, ref y);
+            panel.Controls.Add(NewLabel("While Smart Buffer runs these combos belong to it, so a game that also uses one won't see the key. Click a box and press Delete to turn one off.",
+                new Point(Ui.S(4), y), new Size(panel.Width - Ui.S(8), Ui.S(40)), Theme.Muted, 11.75F));
             return panel;
         }
 
@@ -226,11 +260,11 @@ namespace SmartBuffer
             Panel panel = NewPage();
             int y = 0;
 
-            AddToggleRow(panel, ref y, "Start at login", draft.StartAtLogin, value => draft.StartAtLogin = value);
-            AddToggleRow(panel, ref y, "Run OBS as admin", draft.RunAsAdmin, value => draft.RunAsAdmin = value);
-            panel.Controls.Add(NewLabel("Lets OBS capture games running as admin and gives it more GPU priority. Changing this asks for admin approval.", new Point(Ui.S(ControlLeft), y), new Size(Ui.S(ControlWidth), Ui.S(56)), Theme.Muted, 11.75F));
-            y += Ui.S(58);
-            AddToggleRow(panel, ref y, "Turn off Game Bar capture", draft.GameBarOff, value => draft.GameBarOff = value);
+            Card startup = AddCard(panel, ref y, "Startup");
+            AddToggleRow(startup, "Start with Windows", "OBS starts too if Instant Replay was on.", draft.StartAtLogin, value => draft.StartAtLogin = value);
+            AddToggleRow(startup, "Run OBS as admin", "Only needed for games that run as admin. Changing it asks for approval.", draft.RunAsAdmin, value => draft.RunAsAdmin = value);
+            AddToggleRow(startup, "Turn off Game Bar capture", "Stops Windows recording the same game in the background.", draft.GameBarOff, value => draft.GameBarOff = value);
+            EndCard(startup, ref y);
             return panel;
         }
 
@@ -238,18 +272,20 @@ namespace SmartBuffer
         {
             bool desktop = draft.Capture == Settings.CaptureDesktop;
             captureHelp.Text = desktop
-                ? "Records the whole monitor without touching the game. Notifications and other windows show up in clips."
-                : "Clean footage of just the game. It hooks into fullscreen games, so some anti-cheats may block it or object.";
+                ? "Records the whole monitor, pop-ups and other windows included."
+                : "Just the game, cleanest footage. Some anti-cheats may object.";
             monitorCombo.Enabled = desktop;
         }
 
         private void AddTab(string title, Panel page)
         {
             int index = tabs.Count;
-            int width = Ui.S(PageWidth - Inset * 2) / 5;
+            int pad = Ui.S(4);
+            int width = (Ui.S(PageWidth - Inset * 2) - pad * 2) / 5;
             var tab = new LibraryTab(title)
             {
-                Location = new Point(Ui.S(Inset) + index * width, Ui.S(TabTop)),
+                BackColor = Theme.Panel,
+                Location = new Point(Ui.S(Inset) + pad + index * width, Ui.S(TabTop)),
                 Size = new Size(width, Ui.S(TabHeight)),
             };
             tab.Click += (_, __) => SelectTab(index);
@@ -278,53 +314,156 @@ namespace SmartBuffer
             };
         }
 
-        private void AddRow(Panel panel, ref int y, string label, Control control, int width = ControlWidth)
+        // a rounded group of rows with thin lines between them
+        private sealed class Card : Panel
         {
-            panel.Controls.Add(NewLabel(label, new Point(0, y + Ui.S(6)), new Size(Ui.S(LabelWidth), Ui.S(24)), Theme.Text, 13));
-            control.Location = new Point(Ui.S(ControlLeft), y + Ui.S(4));
-            control.Width = Ui.S(width);
-            panel.Controls.Add(control);
-            y += Ui.S(RowHeight);
+            public readonly List<int> Dividers = new List<int>();
+            public int Next;
+
+            public Card()
+            {
+                DoubleBuffered = true;
+                BackColor = Theme.Background;
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var box = new Rectangle(0, 0, Width - 1, Height - 1);
+                Ui.FillRound(e.Graphics, Theme.Panel, box, Ui.S(12));
+                Ui.DrawRound(e.Graphics, Theme.Border, box, Ui.S(12));
+                using (var pen = new Pen(Theme.Border))
+                {
+                    foreach (int y in Dividers)
+                    {
+                        e.Graphics.DrawLine(pen, Ui.S(CardPad), y, Width - Ui.S(CardPad), y);
+                    }
+                }
+            }
         }
 
-        private void AddToggleRow(Panel panel, ref int y, string label, bool value, Action<bool> changed)
+        private Card AddCard(Panel panel, ref int y, string title)
         {
-            panel.Controls.Add(NewLabel(label, new Point(0, y + Ui.S(6)), new Size(Ui.S(LabelWidth), Ui.S(24)), Theme.Text, 13));
-            var toggle = new ToggleSwitch { Location = new Point(Ui.S(ControlLeft), y + Ui.S(5)), Checked = value };
+            var header = NewLabel(title.ToUpperInvariant(), new Point(Ui.S(4), y), new Size(panel.Width, Ui.S(HeaderHeight - 6)), Theme.Muted, 11.5F);
+            header.Font = Ui.Strong(11.5F);
+            panel.Controls.Add(header);
+            y += Ui.S(HeaderHeight);
+            var card = new Card { Location = new Point(0, y), Width = panel.Width };
+            panel.Controls.Add(card);
+            return card;
+        }
+
+        private static void EndCard(Card card, ref int y)
+        {
+            card.Height = card.Next + 1;
+            y += card.Height + Ui.S(SectionGap);
+        }
+
+        /// One setting: title and optional description on the left, the control on the right. Returns the description label.
+        private Label AddRow(Card card, string title, string description, Control control, int width = ControlWidth)
+        {
+            int pad = Ui.S(CardPad);
+            int textWidth = card.Width - pad * 3 - Ui.S(width);
+            Font small = Ui.Text(11.75F);
+            int descHeight = string.IsNullOrEmpty(description) ? 0
+                : TextRenderer.MeasureText(description, small, new Size(textWidth, 0), TextFormatFlags.WordBreak).Height;
+            int height = descHeight == 0 ? Ui.S(50) : Ui.S(34) + descHeight + Ui.S(12);
+            int top = card.Next;
+            if (top > 0)
+            {
+                card.Dividers.Add(top);
+            }
+
+            Label name = NewLabel(title, new Point(pad, top + (descHeight == 0 ? (height - Ui.S(22)) / 2 : Ui.S(12))), new Size(textWidth, Ui.S(22)), Theme.Text, 13.5F);
+            card.Controls.Add(name);
+            Label help = null;
+            if (descHeight > 0)
+            {
+                help = NewLabel(description, new Point(pad, top + Ui.S(34)), new Size(textWidth, descHeight + 2), Theme.Muted, 11.75F);
+                card.Controls.Add(help);
+            }
+
+            control.BackColor = control is FlatCombo || control is TextBox ? Theme.Background : Theme.Panel;
+            control.Width = control is ToggleSwitch ? control.Width : Ui.S(width);
+            control.Location = new Point(card.Width - pad - (control is ToggleSwitch ? control.Width : Ui.S(width)), top + (height - control.Height) / 2);
+            card.Controls.Add(control);
+            card.Next = top + height;
+            return help;
+        }
+
+        private void AddToggleRow(Card card, string title, string description, bool value, Action<bool> changed)
+        {
+            var toggle = new ToggleSwitch { Checked = value };
             toggle.Toggled += (_, __) =>
             {
                 changed(toggle.Checked);
                 UpdateDirty();
             };
-            panel.Controls.Add(toggle);
-            y += Ui.S(RowHeight);
+            AddRow(card, title, description, toggle);
         }
 
-        private void AddFolderRow(Panel panel, ref int y, string label, string question, string current, Action<string> changed)
+        // on/off, then how much the clips folder may hold, from 10 GB to 5 TB
+        private static readonly int[] LimitSteps = { 10, 25, 50, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000, 3000, 4000, 5000 };
+        private const int DefaultLimitGb = 500;
+
+        private static string GbText(int gb)
         {
+            return gb < 1000 ? gb + " GB" : (gb / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " TB";
+        }
+
+        private void AddLimitRow(Card card)
+        {
+            bool on = draft.StorageLimitGb > 0;
+            var holder = new Panel { BackColor = Theme.Panel, Height = Ui.S(28) };
+            var toggle = new ToggleSwitch { Checked = on, BackColor = Theme.Panel };
+            var slider = new StepSlider(LimitSteps, GbText)
+            {
+                Value = on ? draft.StorageLimitGb : DefaultLimitGb,
+                Enabled = on,
+                BackColor = Theme.Panel,
+            };
+            AddRow(card, "Clips folder limit", "Over the limit, the oldest clips are deleted for good. Favorites are always kept.", holder, ControlWidth + 40);
+            toggle.Location = new Point(0, (holder.Height - toggle.Height) / 2);
+            slider.SetBounds(toggle.Right + Ui.S(10), 0, holder.Width - toggle.Right - Ui.S(10), holder.Height);
+            holder.Controls.Add(toggle);
+            holder.Controls.Add(slider);
+            toggle.Toggled += (_, __) =>
+            {
+                slider.Enabled = toggle.Checked;
+                draft.StorageLimitGb = toggle.Checked ? slider.Value : 0;
+                UpdateDirty();
+            };
+            slider.Changed += () =>
+            {
+                draft.StorageLimitGb = slider.Value;
+                UpdateDirty();
+            };
+        }
+
+        private void AddFolderRow(Card card, string title, string question, string current, Action<string> changed)
+        {
+            var holder = new Panel { BackColor = Theme.Panel, Height = Ui.S(30) };
             var folder = new TextBox
             {
                 ReadOnly = true,
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Theme.Panel,
+                BackColor = Theme.Background,
                 ForeColor = Theme.Text,
-                Font = Ui.Text(13),
+                Font = Ui.Text(12.5F),
                 Text = current,
             };
-            var browse = new ActionButton("...")
-            {
-                Location = new Point(Ui.S(ControlLeft + ControlWidth - 40), y + Ui.S(4)),
-                Size = new Size(Ui.S(40), Ui.S(26)),
-            };
+            var browse = new ActionButton("Change") { BackColor = Theme.Panel };
+            AddRow(card, title, null, holder);
+            browse.SetBounds(holder.Width - Ui.S(76), 0, Ui.S(76), holder.Height);
+            folder.SetBounds(0, (holder.Height - folder.Height) / 2, browse.Left - Ui.S(8), folder.Height);
             browse.Click += (_, __) => PickFolder(folder, question, changed);
-            panel.Controls.Add(browse);
-            AddRow(panel, ref y, label, folder, ControlWidth - 48);
+            holder.Controls.Add(folder);
+            holder.Controls.Add(browse);
         }
 
-        private void AddHotkeyRow(Panel panel, ref int y, string label, string current, bool clearable, bool mustBeFree, Action<string> changed)
+        private void AddHotkeyRow(Card card, string title, string current, bool clearable, bool mustBeFree, Action<string> changed)
         {
             string value = current;
-            var box = new HotkeyBox(clearable) { Text = string.IsNullOrEmpty(current) ? HotkeyBox.NoneText : current };
+            var box = new HotkeyBox(clearable) { Text = string.IsNullOrEmpty(current) ? HotkeyBox.NoneText : current, TextAlign = HorizontalAlignment.Center };
             box.CaptureChanged += capturing => owner.PauseHotkeys(capturing);
             box.Captured += hotkey =>
             {
@@ -343,7 +482,7 @@ namespace SmartBuffer
                 changed(value);
                 UpdateDirty();
             };
-            AddRow(panel, ref y, label, box);
+            AddRow(card, title, null, box, 200);
         }
 
         private FlatCombo NewCombo(Choice[] choices, object current, Action<object> changed)

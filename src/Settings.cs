@@ -30,19 +30,20 @@ namespace SmartBuffer
 
         public string Capture { get; set; } = CaptureGame;
         public string MonitorId { get; set; } = "";
-        public int Quality { get; set; } = 20;
+        // video bitrate in kbps (older versions also stored a constant-quality level, Load converts those)
+        public int Quality { get; set; } = 25000;
         public int Fps { get; set; } = 60;
         public int OutputHeight { get; set; } = 0;
         public string Codec { get; set; } = "h264";
 
         public bool RecordMic { get; set; } = true;
         public string MicDevice { get; set; } = DeviceDefault;
-        public string NoiseSuppression { get; set; } = NoiseOff;
+        public string NoiseSuppression { get; set; } = NoiseRnnoise;
         public string DesktopDevice { get; set; } = DeviceDefault;
         public bool SeparateTracks { get; set; }
 
         public bool StartAtLogin { get; set; } = true;
-        public bool RunAsAdmin { get; set; } = true;
+        public bool RunAsAdmin { get; set; }
         public bool GameBarOff { get; set; } = true;
 
         public bool ReplayEnabled { get; set; } = true;
@@ -53,6 +54,10 @@ namespace SmartBuffer
             Settings settings = File.Exists(ctx.SettingsPath)
                 ? new JavaScriptSerializer().Deserialize<Settings>(File.ReadAllText(ctx.SettingsPath))
                 : new Settings();
+            if (settings.Quality <= Encoders.BitrateThreshold)
+            {
+                settings.Quality = QualityToBitrate(settings.Quality);
+            }
             if (string.IsNullOrEmpty(settings.ClipsDir))
             {
                 settings.ClipsDir = ctx.ClipsDir;
@@ -62,6 +67,12 @@ namespace SmartBuffer
                 settings.RecordingsDir = ctx.RecordingsDir;
             }
             return settings;
+        }
+
+        // the old Highest/High/Medium/Low levels, as the bitrate that looks about the same at 1440p60
+        public static int QualityToBitrate(int level)
+        {
+            return level <= 16 ? 50000 : level <= 20 ? 35000 : level <= 24 ? 20000 : 12000;
         }
 
         public void Save(Context ctx)
@@ -110,6 +121,7 @@ namespace SmartBuffer
             a.ScreenshotHotkey = b.ScreenshotHotkey;
             a.ReplayHotkey = b.ReplayHotkey;
             a.MicHotkey = b.MicHotkey;
+            a.StorageLimitGb = b.StorageLimitGb;
             return a.ToJson() != b.ToJson();
         }
     }

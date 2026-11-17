@@ -186,6 +186,7 @@ namespace SmartBuffer
             var candidates = new List<Moment>();
             int length = levels.Length;
 
+
             double[] baseline = LocalMedian(levels);
             for (int i = 0; i < length; i++)
             {

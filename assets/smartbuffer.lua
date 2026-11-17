@@ -281,25 +281,31 @@ local function move_into_game_folder(path, folder, prefix)
     return target
 end
 
+-- quick write can't append, so the file is rewritten, keeping only the newest 500 lines
+local function add_line(file, line)
+    local lines = {}
+    local old = obs.os_file_exists(file) and obs.os_quick_read_utf8_file(file) or ""
+    for existing in old:gmatch("[^\r\n]+") do
+        lines[#lines + 1] = existing
+    end
+    lines[#lines + 1] = line
+    local text = table.concat(lines, "\n", math.max(1, #lines - 499)) .. "\n"
+    obs.os_quick_write_utf8_file(file, text, #text, false)
+end
+
+local function file_name(path)
+    return (path or ""):match("([^/\\]+)$")
+end
+
 -- remembers which window a desktop clip came from, the player offers to sort it as that game
 local function note_desktop_source(target)
-    if target == nil then
-        return
-    end
     local name = foreground_name()
-    if name == nil then
+    if target == nil or name == nil then
         return
     end
-    local lines = {}
-    local old = obs.os_file_exists(sources_file) and obs.os_quick_read_utf8_file(sources_file) or ""
-    for line in old:gmatch("[^\r\n]+") do
-        lines[#lines + 1] = line
-    end
-    lines[#lines + 1] = target:match("([^/\\]+)$") .. "\t" .. name
-    -- quick write can't append, so the file is rewritten, keeping only recent clips
-    local text = table.concat(lines, "\n", math.max(1, #lines - 499)) .. "\n"
-    obs.os_quick_write_utf8_file(sources_file, text, #text, false)
+    add_line(sources_file, file_name(target) .. "\t" .. name)
 end
+
 
 -- obs says a recording stopped while it's still finishing the file, so this keeps trying
 local function run_moves()
@@ -386,7 +392,8 @@ local function on_event(event)
         restore_clips_path()
         local folder = record_game or game or foreground_game() or DESKTOP_FOLDER
         local last = obs.obs_frontend_get_last_recording()
-        note_saved("recording", folder, move_into_game_folder(last, folder, "") or last)
+        local target = move_into_game_folder(last, folder, "") or last
+        note_saved("recording", folder, target)
         record_started = 0
         record_game = nil
         status_dirty = true

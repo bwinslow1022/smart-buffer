@@ -37,6 +37,8 @@ namespace SmartBuffer
             Font = Ui.Text(13),
         };
         private const int SearchWidth = 220;
+        private readonly IconButton favoritesButton = new IconButton(Icons.Star) { BackColor = Theme.Bar, IconSize = 15 };
+        private bool favoritesOnly;
         private string Query => search.Text.Trim();
         private readonly SegmentToggle sort = new SegmentToggle("Recently modified", "Biggest first") { BackColor = Theme.Bar };
         private readonly LibraryGrid grid;
@@ -79,7 +81,16 @@ namespace SmartBuffer
             backButton.Click += (_, __) => GoBack();
             closeButton.Click += (_, __) => CloseGallery();
             sort.Changed += OnSortChanged;
-            bar.Controls.AddRange(new Control[] { backButton, crumb, search, sort, closeButton });
+            bar.Controls.AddRange(new Control[] { backButton, crumb, favoritesButton, search, sort, closeButton });
+            favoritesButton.Click += (_, __) =>
+            {
+                favoritesOnly = !favoritesOnly;
+                favoritesButton.Icon = favoritesOnly ? Icons.StarFilled : Icons.Star;
+                favoritesButton.IconColor = favoritesOnly ? Theme.Highlight : Theme.Text;
+                favoritesButton.Invalidate();
+                ShowCurrentGrid();
+                Render();
+            };
             search.TextChanged += (_, __) =>
             {
                 ShowCurrentGrid();
@@ -311,20 +322,24 @@ namespace SmartBuffer
                 : "No recordings yet. Press " + saved.RecordHotkey + " to start one.";
         }
 
-        // matches the file name or its game folder, across every folder
+        // matches the file name or its game folder, across every folder, and only favorites when that filter is on
         private List<LibraryFile> SearchResults()
         {
             string query = Query;
+            HashSet<string> favorites = grid.Favorites;
             return folders
-                .SelectMany(folder => folder.Files.Where(file => file.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
-                    || folder.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
+                .SelectMany(folder => folder.Files.Where(file => (query == ""
+                        || file.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0
+                        || folder.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    && (!favoritesOnly || favorites.Contains(file.Path))))
                 .OrderByDescending(file => file.Modified)
                 .ToList();
         }
 
         private void ShowCurrentGrid()
         {
-            if (Query != "" && openFolder == null)
+            grid.Favorites = ClipCare.Favorites(ctx);
+            if ((Query != "" || favoritesOnly) && openFolder == null)
             {
                 grid.ShowFiles(SearchResults());
                 return;
@@ -463,10 +478,11 @@ namespace SmartBuffer
                 }
                 else
                 {
-                    if (Query != "")
+                    if (Query != "" || favoritesOnly)
                     {
                         int matches = SearchResults().Count;
-                        crumb.Set(matches == 1 ? "1 match" : matches + " matches", Part(root, null));
+                        string noun = favoritesOnly ? (matches == 1 ? " favorite" : " favorites") : (matches == 1 ? " match" : " matches");
+                        crumb.Set(matches + noun, Part(root, null));
                     }
                     else
                     {
@@ -518,10 +534,13 @@ namespace SmartBuffer
                 right = sort.Left - Ui.S(12);
             }
             search.Visible = !ShowingSettings && openFile == null && openFolder == null;
+            favoritesButton.Visible = search.Visible;
             if (search.Visible)
             {
                 search.SetBounds(right - Ui.S(SearchWidth), (bar.Height - search.Height) / 2, Ui.S(SearchWidth), search.Height);
-                right = search.Left - Ui.S(12);
+                right = search.Left - Ui.S(8);
+                favoritesButton.SetBounds(right - square, top, square, square);
+                right = favoritesButton.Left - Ui.S(12);
             }
             crumb.SetBounds(x, top, Math.Max(0, right - x), square);
 

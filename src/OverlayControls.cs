@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace SmartBuffer
@@ -189,7 +190,7 @@ namespace SmartBuffer
         {
             Graphics graphics = e.Graphics;
             Rectangle box = ClientRectangle;
-            using (var fill = new SolidBrush(Theme.Panel))
+            using (var fill = new SolidBrush(BackColor))
             using (var border = new Pen(Focused || DroppedDown ? Theme.Accent : Theme.Border))
             using (var arrow = new Pen(Enabled ? Theme.Text : Theme.Muted, 1.5F))
             {
@@ -1091,6 +1092,104 @@ namespace SmartBuffer
                 Ui.DrawLine(graphics, when, font, new Rectangle(Ui.S(36), row.Y, whenWidth + 2, row.Height), moment.Keep ? Theme.Text : Theme.Muted);
                 Color tag = moment.Kills > 0 ? Theme.Highlight : Theme.Muted;
                 Ui.DrawLine(graphics, moment.Why(), Ui.Text(12), new Rectangle(Ui.S(44) + whenWidth, row.Y, row.Width - whenWidth - Ui.S(54), row.Height), tag, TextFormatFlags.Right);
+            }
+        }
+    }
+
+    // a slider that snaps to fixed steps, with the current value written at its right end
+    public sealed class StepSlider : PaintedControl
+    {
+        private const int ValueWidth = 70;
+        private readonly int[] steps;
+        private readonly Func<int, string> format;
+        private int index;
+        private bool dragging;
+
+        public event Action Changed;
+
+        public StepSlider(int[] steps, Func<int, string> format)
+        {
+            this.steps = steps;
+            this.format = format;
+            Height = Ui.S(28);
+            Cursor = Cursors.Hand;
+        }
+
+        public int Value
+        {
+            get => steps[index];
+            // the nearest step, for a saved value that isn't one of them
+            set => Change(ref index, Enumerable.Range(0, steps.Length).OrderBy(i => Math.Abs(steps[i] - value)).First());
+        }
+
+        private Rectangle Track => new Rectangle(Ui.S(8), Height / 2 - Ui.S(2), Width - Ui.S(ValueWidth) - Ui.S(16), Ui.S(4));
+
+        private int KnobX(int i) => Track.X + (int)Math.Round((double)Track.Width * i / (steps.Length - 1));
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics graphics = e.Graphics;
+            graphics.Clear(BackColor);
+            Rectangle track = Track;
+            Color fill = Enabled ? Theme.Accent : Theme.Border;
+            Ui.FillRound(graphics, Theme.Border, track, track.Height / 2);
+            int x = KnobX(index);
+            Ui.FillRound(graphics, fill, new Rectangle(track.X, track.Y, Math.Max(track.Height, x - track.X), track.Height), track.Height / 2);
+            int knob = Ui.S(16);
+            using (var brush = new SolidBrush(Enabled ? Theme.Knob : Theme.Slash))
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.FillEllipse(brush, x - knob / 2, Height / 2 - knob / 2, knob, knob);
+            }
+            Ui.DrawLine(graphics, format(Value), Ui.Strong(13), new Rectangle(Width - Ui.S(ValueWidth), 0, Ui.S(ValueWidth), Height), Enabled ? Theme.Text : Theme.Muted, TextFormatFlags.Right);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (Enabled && e.Button == MouseButtons.Left)
+            {
+                dragging = true;
+                Pick(e.X);
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (dragging)
+            {
+                Pick(e.X);
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            dragging = false;
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (Enabled)
+            {
+                SetIndex(Math.Max(0, Math.Min(steps.Length - 1, index + Math.Sign(e.Delta))));
+            }
+        }
+
+        private void Pick(int x)
+        {
+            double at = (double)(x - Track.X) / Math.Max(1, Track.Width) * (steps.Length - 1);
+            SetIndex((int)Math.Round(Math.Max(0, Math.Min(steps.Length - 1, at))));
+        }
+
+        private void SetIndex(int value)
+        {
+            if (value != index)
+            {
+                Change(ref index, value);
+                Changed?.Invoke();
             }
         }
     }

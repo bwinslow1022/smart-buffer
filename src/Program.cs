@@ -21,6 +21,7 @@ namespace SmartBuffer
             {
                 Highlights.SelfTest();
                 ClipCare.SelfTest();
+                UpdateCheck.SelfTest();
                 Console.WriteLine("self-test ok");
                 return 0;
             }

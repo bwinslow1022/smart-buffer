@@ -32,6 +32,7 @@ namespace SmartBuffer
         public const string Delete = "\uE74D";
         public const string Star = "\uE734";
         public const string StarFilled = "\uE735";
+        public const string Download = "\uE896";
     }
 
     // the overlay is laid out in 96 dpi pixels and scaled to whichever monitor it opens on

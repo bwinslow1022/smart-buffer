@@ -30,6 +30,9 @@ namespace SmartBuffer
         private readonly MediaCache cache;
         private readonly Timer previewTimer = new Timer { Interval = PreviewDelayMs };
         private VideoHost preview;
+
+        // paths with a star badge, set by the gallery
+        public HashSet<string> Favorites { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private int previewing = -1;
         private List<LibraryFolder> folders;
         private List<LibraryFile> files;
@@ -278,6 +281,12 @@ namespace SmartBuffer
         {
             var thumb = new Rectangle(tile.X, tile.Y, tile.Width, tile.Width * 9 / 16);
             VideoThumb.Draw(graphics, thumb, cache.Get(file.Path), hovered ? Theme.Accent : Theme.Border, 1F, 9, 8, 12);
+            if (Favorites.Contains(file.Path))
+            {
+                var chip = new Rectangle(thumb.X + Ui.S(8), thumb.Y + Ui.S(8), Ui.S(26), Ui.S(26));
+                Ui.FillRound(graphics, Color.FromArgb(200, Theme.Background), chip, Ui.S(13));
+                Ui.DrawIcon(graphics, Icons.StarFilled, chip, Theme.Highlight, 13);
+            }
             int y = thumb.Bottom + Ui.S(8);
             // a renamed clip shows its name, the date moves down next to the size
             string name = Path.GetFileNameWithoutExtension(file.Name);

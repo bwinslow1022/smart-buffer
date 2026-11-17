@@ -40,6 +40,12 @@ Function OpenApp
   Exec '"$WINDIR\explorer.exe" "$INSTDIR\${EXE}"'
 FunctionEnd
 
+; an update runs silently from the tray app, which it closed, so it starts the tray again as the normal user
+Function .onInstSuccess
+  IfSilent 0 +2
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /run /tn "Smart Buffer Tray"'
+FunctionEnd
+
 Section "Install"
   ; a running tray helper keeps the exe locked
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM "${EXE}"'

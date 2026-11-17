@@ -23,6 +23,10 @@ namespace SmartBuffer
         private const int ScreenshotHotkeyId = 4;
         private const int ReplayHotkeyId = 5;
         private const int MicHotkeyId = 6;
+        private const int UpdateCheckMs = 6 * 60 * 60 * 1000;
+        private readonly System.Windows.Forms.Timer updateTimer;
+
+        public ReadyUpdate Update { get; private set; }
         private const int WmHotkey = 0x0312;
         private const int QuitWaitMs = 5000;
         private const int SaveDelayMs = 300;
@@ -74,6 +78,12 @@ namespace SmartBuffer
             timer.Start();
 
             // separate fast check so the saved card shows within a moment of the clip being written
+            // a newer release downloads in the background now and every few hours, the overlay offers to install it
+            updateTimer = new System.Windows.Forms.Timer { Interval = UpdateCheckMs };
+            updateTimer.Tick += (_, __) => PrepareUpdate();
+            updateTimer.Start();
+            PrepareUpdate();
+
             saveTimer = new System.Windows.Forms.Timer { Interval = 150 };
             saveTimer.Tick += (_, __) => CheckSaved();
             saveTimer.Start();
@@ -391,6 +401,26 @@ namespace SmartBuffer
                 case MicHotkeyId:
                     ToggleMicFromHotkey();
                     break;
+            }
+        }
+
+        private void PrepareUpdate()
+        {
+            // one reference write, so no need to come back to the ui thread
+            Task.Run(() => Update = UpdateCheck.Prepare(ctx));
+        }
+
+        // the installer closes this app, installs quietly and starts it again
+        public void InstallUpdate()
+        {
+            if (Update == null)
+            {
+                return;
+            }
+            overlay?.CloseForOtherApp();
+            if (!UpdateCheck.Install(Update))
+            {
+                tray.ShowBalloonTip(4000, Context.AppName, "The update wasn't installed. Open the overlay to try again.", ToolTipIcon.Info);
             }
         }
 

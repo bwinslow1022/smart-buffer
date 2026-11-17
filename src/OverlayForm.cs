@@ -53,6 +53,13 @@ namespace SmartBuffer
 
         private Settings saved;
         private int recentLabelTop;
+        // a card like the others, only there once an update has downloaded
+        private readonly SidebarRow updateRow = new SidebarRow("Update ready") { Icon = Icons.Download, Card = true, Clickable = true, Tint = Theme.Accent, Visible = false };
+        private readonly ActionButton updateButton = new ActionButton("Update", null, true);
+        private const long LowDiskBytes = 10L * 1000 * 1000 * 1000;
+        private const int DiskCheckSeconds = 30;
+        private DateTime diskCheckedAt = DateTime.MinValue;
+        private string diskWarning = "";
         private GalleryForm gallery;
         private bool recording;
         private bool micOn;
@@ -98,7 +105,15 @@ namespace SmartBuffer
             Controls.Add(messageLabel);
             messageLabel.Font = Ui.Text(12.5F);
             messageLabel.SetBounds(Ui.S(16), ClientSize.Height - Ui.S(MicHeight + Inset + MessageHeight), ClientSize.Width - Ui.S(32), Ui.S(MessageHeight - 8));
+            int cardWidth = ClientSize.Width - 1 - Ui.S(Inset) * 2;
+            updateRow.SetBounds(Ui.S(Inset), messageLabel.Top - Ui.S(RowHeight + CardGap), cardWidth, Ui.S(RowHeight));
+            updateButton.SetBounds(cardWidth - Ui.S(16 + 92), (Ui.S(RowHeight) - Ui.S(36)) / 2, Ui.S(92), Ui.S(36));
+            updateRow.Controls.Add(updateButton);
+            updateRow.Click += (_, __) => owner.InstallUpdate();
+            updateButton.Click += (_, __) => owner.InstallUpdate();
+            Controls.Add(updateRow);
             BuildRecent();
+            CheckForUpdate();
 
             micOn = saved.RecordMic;
             replaySwitch.Checked = saved.ReplayEnabled;
@@ -338,7 +353,7 @@ namespace SmartBuffer
             int left = Ui.S(Inset);
             recentLabelTop = shotRow.Bottom + Ui.S(14);
             int top = recentLabelTop + Ui.S(SectionLabelHeight + 6);
-            recent.SetBounds(left, top, ClientSize.Width - 1 - left * 2, Math.Max(0, messageLabel.Top - Ui.S(8) - top));
+            recent.SetBounds(left, top, ClientSize.Width - 1 - left * 2, Math.Max(0, (owner.Update != null ? updateRow.Top : messageLabel.Top) - Ui.S(8) - top));
             recent.EmptyText = "No clips yet. Press " + saved.SaveHotkey + " with replay on.";
             recent.Picked += (folder, file) =>
             {
@@ -607,7 +622,41 @@ namespace SmartBuffer
             {
                 return Obs.VisiblePopup(ctx) != null ? "OBS is waiting on a popup." : "OBS is on another profile, so Smart Buffer can't control it.";
             }
-            return "";
+            return DiskWarning();
+        }
+
+        // checked now and then, not every second, the drive won't fill that fast
+        private string DiskWarning()
+        {
+            if (DateTime.UtcNow - diskCheckedAt < TimeSpan.FromSeconds(DiskCheckSeconds))
+            {
+                return diskWarning;
+            }
+            diskCheckedAt = DateTime.UtcNow;
+            diskWarning = "";
+            try
+            {
+                var drive = new System.IO.DriveInfo(System.IO.Path.GetPathRoot(saved.ClipsDir));
+                if (drive.IsReady && drive.AvailableFreeSpace < LowDiskBytes)
+                {
+                    diskWarning = $"Only {Library.SizeText(drive.AvailableFreeSpace)} free on {drive.Name.TrimEnd('\\')}. Clips stop saving when it's full.";
+                }
+            }
+            catch (Exception e) when (e is ArgumentException || e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+            }
+            return diskWarning;
+        }
+
+        // the tray app already downloaded and checked it, so this only offers it
+        private void CheckForUpdate()
+        {
+            ReadyUpdate update = owner.Update;
+            if (update != null)
+            {
+                updateRow.Subtitle = $"Version {update.Version}";
+                updateRow.Visible = true;
+            }
         }
 
         [DllImport("user32.dll")]

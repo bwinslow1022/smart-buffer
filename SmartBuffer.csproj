@@ -8,7 +8,7 @@
     <RootNamespace>SmartBuffer</RootNamespace>
     <AssemblyName>SmartBuffer</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.9.1</Version>
+    <Version>0.9.3</Version>
     <Product>SmartBuffer</Product>
     <Description>Sets up OBS as an always-on clip recorder</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
