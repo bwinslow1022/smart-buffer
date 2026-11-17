@@ -125,10 +125,6 @@ dotnet build SmartBuffer.csproj -c Release
 
 The exe is written to `bin\Release\net48\SmartBuffer.exe`. To build the installer, run [NSIS](https://nsis.sourceforge.io): `makensis -DVERSION=x.y.z installer\SmartBuffer.nsi`, which writes `bin\SmartBuffer-Setup.exe`.
 
-## Credits
-
-Smart Buffer is a fork of [ShadBuffer](https://github.com/seandotnet/ShadBuffer) by seandotnet, used under the MIT license. It adds share copies sized for Discord, a saved notification, fixed-bitrate presets, a modern folder picker and other changes.
-
 ## License
 
 [MIT](LICENSE). Smart Buffer is not affiliated with or endorsed by the OBS Project or NVIDIA.
