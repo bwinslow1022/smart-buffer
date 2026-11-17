@@ -55,6 +55,7 @@ namespace SmartBuffer
         private readonly FlatCombo sizeCombo = new FlatCombo();
         private readonly ActionButton shareButton = new ActionButton("Make share copy", Icons.Film, true);
         private readonly Label shareStatus = NewLabel(12.5F, Theme.Muted);
+        private readonly ActionButton highlightButton = new ActionButton("Find highlights", Icons.Film);
         private readonly Panel shareRule = new Panel { BackColor = Theme.Border };
         private static readonly Choice[] SizeChoices =
         {
@@ -159,7 +160,8 @@ namespace SmartBuffer
             startButton.Click += (_, __) => SetTrim(true);
             endButton.Click += (_, __) => SetTrim(false);
             shareButton.Click += (_, __) => MakeShareCopy();
-            side.Controls.AddRange(new Control[] { shareTitle, startButton, endButton, trimHint, sizeCombo, shareButton, shareStatus, shareRule });
+            highlightButton.Click += (_, __) => FindHighlights();
+            side.Controls.AddRange(new Control[] { shareTitle, startButton, endButton, trimHint, sizeCombo, shareButton, highlightButton, shareStatus, shareRule });
             side.Controls.AddRange(new Control[]
             {
                 folderButton, copyButton, rule, uploadTitle, uploadRight, uploadBar, uploadDetail, uploadError, linkBox, uploadButton, deleteButton, cancelButton, uploadFine,
@@ -330,6 +332,8 @@ namespace SmartBuffer
             sizeCombo.SetBounds(0, y, width, Ui.S(30));
             y += Ui.S(38);
             shareButton.SetBounds(0, y, width, Ui.S(44));
+            y += Ui.S(52);
+            highlightButton.SetBounds(0, y, width, Ui.S(44));
             y += Ui.S(48);
             int statusHeight = string.IsNullOrEmpty(shareStatus.Text) ? 0 : TextRenderer.MeasureText(shareStatus.Text, shareStatus.Font, new Size(width, 0), TextFormatFlags.WordBreak).Height;
             shareStatus.SetBounds(0, y, width, statusHeight + 2);
@@ -460,6 +464,51 @@ namespace SmartBuffer
                     bool copied = TryCopy(() => Clipboard.SetFileDropList(new StringCollection { made }));
                     shareStatus.Text = $"{Path.GetFileName(made)}, {Library.SizeText(new FileInfo(made).Length)}. "
                         + (copied ? "Copied, paste it in Discord." : "Saved next to the clip.");
+                    shareStatus.ForeColor = Theme.Text;
+                }
+                LayoutSide();
+            })));
+        }
+
+        // cuts the loud moments (shouting, fights) out as their own clips next to this one
+        private void FindHighlights()
+        {
+            if (sharing || file == null)
+            {
+                return;
+            }
+            video?.Pause();
+            UpdatePlayState();
+            sharing = true;
+            shareButton.Enabled = highlightButton.Enabled = false;
+            string source = file.Path;
+            double seconds = ClipLength.TotalSeconds;
+            Action<string> status = text => BeginInvoke((Action)(() =>
+            {
+                shareStatus.Text = text;
+                shareStatus.ForeColor = Theme.Muted;
+                LayoutSide();
+            }));
+            Task.Run(() =>
+            {
+                ShareEncoder.EnsureFfmpeg(ctx, p => status($"Getting ffmpeg (one time, ~115 MB)... {p:P0}"));
+                return Highlights.Make(ctx, source, seconds, status);
+            }).ContinueWith(task => BeginInvoke((Action)(() =>
+            {
+                sharing = false;
+                shareButton.Enabled = highlightButton.Enabled = true;
+                if (task.IsFaulted)
+                {
+                    Exception error = task.Exception.GetBaseException();
+                    shareStatus.Text = error is SetupException ? error.Message : "Something went wrong: " + error.Message;
+                    shareStatus.ForeColor = Theme.ErrorText;
+                }
+                else
+                {
+                    int count = task.Result.Count;
+                    shareStatus.Text = count == 0
+                        ? "Nothing stood out. Highlights need moments clearly louder than the rest of the clip."
+                        : $"Saved {count} highlight{(count == 1 ? "" : "s")} next to this file, named \"(highlight 1)\" and up.";
                     shareStatus.ForeColor = Theme.Text;
                 }
                 LayoutSide();

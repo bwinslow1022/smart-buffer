@@ -96,6 +96,17 @@ namespace SmartBuffer
             Rescan();
         }
 
+        // straight into the player, from the recent clips on the dock
+        public void ShowClip(LibraryFolder folder, LibraryFile file)
+        {
+            ShowingSettings = false;
+            Kind = LibraryKind.Clips;
+            openFolder = folder;
+            Bounds = area;
+            ShowPanel();
+            OpenFile(file);
+        }
+
         public void ShowSettings()
         {
             ShowingSettings = true;

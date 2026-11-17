@@ -165,6 +165,8 @@ namespace SmartBuffer
             };
             using (Process process = Process.Start(info))
             {
+                // a game running at the same time keeps its cpu, encoding just takes a bit longer
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch (Exception) { }
                 var errors = new StringBuilder();
                 process.ErrorDataReceived += (_, e) => { if (e.Data != null) errors.AppendLine(e.Data); };
                 process.BeginErrorReadLine();

@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -10,13 +13,17 @@ namespace SmartBuffer
     public sealed class OverlayForm : Form
     {
         private const int DockWidth = 378;
-        private const int HeaderHeight = 56;
-        private const int TabsTop = 60;
-        private const int TabsHeight = 52;
-        private const int RowsTop = 121;
+        private const int HeaderHeight = 72;
+        private const int TabsTop = 84;
+        private const int TabsHeight = 46;
+        private const int CaptureLabelTop = 140;
+        private const int RowsTop = 166;
+        private const int SectionLabelHeight = 22;
+        private const int RecentCount = 8;
         private const int RowHeight = 62;
         private const int SaveBarHeight = 44;
-        private const int SaveBarGap = 10;
+        private const int Inset = 12;
+        private const int CardGap = 8;
         private const int MicHeight = 64;
         private const int MessageHeight = 72;
         private const int CornerPreference = 33;
@@ -32,16 +39,20 @@ namespace SmartBuffer
         private readonly Timer statusTimer;
         private readonly LibraryTab clipsTab = new LibraryTab("Clips", Icons.Film);
         private readonly LibraryTab recordingsTab = new LibraryTab("Recordings", Icons.Video);
-        private readonly SidebarRow recordRow = new SidebarRow("Record") { Clickable = true };
-        private readonly SidebarRow replayRow = new SidebarRow("Instant Replay") { Icon = Icons.History };
-        private readonly SidebarRow shotRow = new SidebarRow("Screenshot") { Icon = Icons.Photo, Clickable = true, Trail = Icons.Camera };
-        private readonly SidebarRow micRow = new SidebarRow("Microphone") { Icon = Icons.Mic };
-        private readonly ToggleSwitch replaySwitch = new ToggleSwitch();
-        private readonly ActionButton saveButton = new ActionButton("Save clip", null, true);
-        private readonly Label micValue = new Label { ForeColor = Theme.Text, BackColor = Theme.Background, TextAlign = ContentAlignment.MiddleCenter };
+        private readonly SidebarRow recordRow = new SidebarRow("Record") { Clickable = true, Card = true, Tint = Theme.Danger };
+        private readonly SidebarRow replayRow = new SidebarRow("Instant Replay") { Icon = Icons.History, Card = true, Tint = Theme.Accent };
+        private readonly SidebarRow shotRow = new SidebarRow("Screenshot") { Icon = Icons.Photo, Clickable = true, Trail = Icons.Camera, Card = true, Tint = Theme.Sky };
+        private readonly SidebarRow micRow = new SidebarRow("Microphone") { Icon = Icons.Mic, Card = true, Tint = Theme.Mint };
+        private readonly ToggleSwitch replaySwitch = new ToggleSwitch { BackColor = Theme.Panel };
+        private readonly ToggleSwitch micSwitch = new ToggleSwitch { OnColor = Theme.Mint };
+        private readonly ActionButton saveButton = new ActionButton("Save clip", null, true) { BackColor = Theme.Panel };
+        private readonly MediaCache cache = new MediaCache();
+        private readonly RecentStrip recent;
+        private readonly HeaderBar header = new HeaderBar();
         private readonly Label messageLabel = new Label { ForeColor = Theme.Muted, BackColor = Theme.Background, TextAlign = ContentAlignment.BottomLeft };
 
         private Settings saved;
+        private int recentLabelTop;
         private GalleryForm gallery;
         private bool recording;
         private bool micOn;
@@ -79,13 +90,15 @@ namespace SmartBuffer
             Bounds = new Rectangle(screen.Left, screen.Top, Ui.S(DockWidth), screen.Height);
             MaximumSize = Size;
 
+            recent = new RecentStrip(cache);
             BuildHeader();
             BuildTabs();
             BuildRows();
             BuildMic();
             Controls.Add(messageLabel);
             messageLabel.Font = Ui.Text(12.5F);
-            messageLabel.SetBounds(Ui.S(16), ClientSize.Height - Ui.S(MicHeight + MessageHeight) - 1, ClientSize.Width - Ui.S(32), Ui.S(MessageHeight - 8));
+            messageLabel.SetBounds(Ui.S(16), ClientSize.Height - Ui.S(MicHeight + Inset + MessageHeight), ClientSize.Width - Ui.S(32), Ui.S(MessageHeight - 8));
+            BuildRecent();
 
             micOn = saved.RecordMic;
             replaySwitch.Checked = saved.ReplayEnabled;
@@ -171,10 +184,16 @@ namespace SmartBuffer
             {
                 int right = ClientSize.Width - 1;
                 e.Graphics.DrawLine(pen, right, 0, right, ClientSize.Height);
-                e.Graphics.DrawLine(pen, Ui.S(12), Ui.S(TabsTop + TabsHeight), right - Ui.S(12), Ui.S(TabsTop + TabsHeight));
-                int micTop = ClientSize.Height - Ui.S(MicHeight) - 1;
-                e.Graphics.DrawLine(pen, Ui.S(12), micTop, right - Ui.S(12), micTop);
             }
+            // the tabs sit in one rounded track, like a segmented control
+            Ui.FillRound(e.Graphics, Theme.Panel, new Rectangle(Ui.S(Inset), Ui.S(TabsTop), ClientSize.Width - 1 - Ui.S(Inset * 2), Ui.S(TabsHeight)), Ui.S(10));
+            PaintSectionLabel(e.Graphics, "CAPTURE", Ui.S(CaptureLabelTop));
+            PaintSectionLabel(e.Graphics, "RECENT CLIPS", recentLabelTop);
+        }
+
+        private void PaintSectionLabel(Graphics graphics, string text, int top)
+        {
+            Ui.DrawLine(graphics, text, Ui.Strong(11.5F), new Rectangle(Ui.S(Inset + 4), top, Ui.S(200), Ui.S(SectionLabelHeight)), Theme.Muted);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -183,9 +202,60 @@ namespace SmartBuffer
             gallery?.Close();
         }
 
+        // name on top, live status under it, on a faint accent glow
+        private sealed class HeaderBar : Panel
+        {
+            public string Status = "";
+            public Color StatusColor = Theme.Muted;
+
+            public HeaderBar()
+            {
+                DoubleBuffered = true;
+                ResizeRedraw = true;
+                BackColor = Theme.Panel;
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics graphics = e.Graphics;
+                // the glow fades out before the buttons on the right, they sit on plain panel colour
+                graphics.Clear(Theme.Panel);
+                var glowBox = new Rectangle(0, 0, Width * 3 / 5, Height);
+                using (var glow = new LinearGradientBrush(glowBox, Theme.Mix(Theme.Panel, Theme.Accent, 0.28F), Theme.Panel, LinearGradientMode.Horizontal))
+                {
+                    graphics.FillRectangle(glow, new Rectangle(0, 0, glowBox.Width - 1, Height));
+                }
+                using (var pen = new Pen(Theme.Border))
+                {
+                    graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+                }
+
+                int size = Ui.S(38);
+                var logo = new Rectangle(Ui.S(14), (Height - size) / 2, size, size);
+                using (var fill = new LinearGradientBrush(logo, Theme.AccentHover, Theme.FolderBack, LinearGradientMode.ForwardDiagonal))
+                using (GraphicsPath path = Ui.Round(logo, Ui.S(10)))
+                {
+                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    graphics.FillPath(fill, path);
+                }
+                Ui.DrawIcon(graphics, Icons.History, logo, Color.White, 18);
+
+                int left = logo.Right + Ui.S(12);
+                int middle = Height / 2;
+                Ui.DrawLine(graphics, Context.AppName, Ui.Text(17, FontStyle.Bold), new Rectangle(left, middle - Ui.S(23), Ui.S(200), Ui.S(24)), Theme.Text);
+                int dot = Ui.S(8);
+                using (var brush = new SolidBrush(StatusColor))
+                {
+                    graphics.FillEllipse(brush, left + 1, middle + Ui.S(7), dot, dot);
+                }
+                Ui.DrawLine(graphics, Status, Ui.Text(12.5F), new Rectangle(left + dot + Ui.S(7), middle + Ui.S(1), Ui.S(200), Ui.S(20)), Theme.Mix(Theme.Muted, StatusColor, 0.5F));
+            }
+        }
+
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             statusTimer.Dispose();
+            cache.Dispose();
             if (restoreFocus && previousWindow != IntPtr.Zero)
             {
                 SetForegroundWindow(previousWindow);
@@ -195,16 +265,7 @@ namespace SmartBuffer
 
         private void BuildHeader()
         {
-            var header = new Panel { BackColor = Theme.Panel, Bounds = new Rectangle(0, 0, ClientSize.Width - 1, Ui.S(HeaderHeight)) };
-            header.Controls.Add(new Label
-            {
-                Text = Context.AppName,
-                Font = Ui.Text(20, FontStyle.Bold),
-                ForeColor = Theme.Text,
-                BackColor = Theme.Panel,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Bounds = new Rectangle(Ui.S(14), 0, Ui.S(240), header.Height),
-            });
+            header.Bounds = new Rectangle(0, 0, ClientSize.Width - 1, Ui.S(HeaderHeight));
 
             int square = Ui.S(44);
             int top = (header.Height - square) / 2;
@@ -219,9 +280,12 @@ namespace SmartBuffer
 
         private void BuildTabs()
         {
-            int half = (ClientSize.Width - 1 - Ui.S(24)) / 2;
-            clipsTab.SetBounds(Ui.S(12), Ui.S(TabsTop), half, Ui.S(TabsHeight));
-            recordingsTab.SetBounds(Ui.S(12) + half, Ui.S(TabsTop), half, Ui.S(TabsHeight));
+            int pad = Ui.S(4);
+            int half = (ClientSize.Width - 1 - Ui.S(Inset * 2) - pad * 2) / 2;
+            clipsTab.BackColor = Theme.Panel;
+            recordingsTab.BackColor = Theme.Panel;
+            clipsTab.SetBounds(Ui.S(Inset) + pad, Ui.S(TabsTop) + pad, half, Ui.S(TabsHeight) - pad * 2);
+            recordingsTab.SetBounds(Ui.S(Inset) + pad + half, Ui.S(TabsTop) + pad, half, Ui.S(TabsHeight) - pad * 2);
             clipsTab.Click += (_, __) => OpenTab(LibraryKind.Clips);
             recordingsTab.Click += (_, __) => OpenTab(LibraryKind.Recordings);
             Controls.Add(clipsTab);
@@ -230,57 +294,90 @@ namespace SmartBuffer
 
         private void BuildRows()
         {
-            int width = ClientSize.Width - 1;
+            int left = Ui.S(Inset);
+            int width = ClientSize.Width - 1 - left * 2;
             int y = Ui.S(RowsTop);
 
             recordRow.IconPainter = PaintRecordIcon;
-            recordRow.SetBounds(0, y, width, Ui.S(RowHeight));
+            recordRow.SetBounds(left, y, width, Ui.S(RowHeight));
             recordRow.Click += (_, __) => owner.ToggleRecording();
-            y += Ui.S(RowHeight);
+            y += Ui.S(RowHeight + CardGap);
 
-            replayRow.SetBounds(0, y, width, Ui.S(RowHeight));
-            replaySwitch.Location = new Point(width - Ui.S(16) - replaySwitch.Width, (replayRow.Height - replaySwitch.Height) / 2);
+            // save clip lives inside the instant replay card, it only works while replay is on
+            replayRow.HeadHeight = Ui.S(RowHeight);
+            replayRow.SetBounds(left, y, width, Ui.S(RowHeight + SaveBarHeight + 14));
+            replaySwitch.Location = new Point(width - Ui.S(16) - replaySwitch.Width, (Ui.S(RowHeight) - replaySwitch.Height) / 2);
             replaySwitch.Toggled += (_, __) => ToggleReplay();
-            replayRow.Controls.Add(replaySwitch);
-            y += Ui.S(RowHeight);
-
-            saveButton.SetBounds(Ui.S(54), y, width - Ui.S(54 + 16), Ui.S(SaveBarHeight));
+            saveButton.SetBounds(Ui.S(14), Ui.S(RowHeight), width - Ui.S(28), Ui.S(SaveBarHeight));
             saveButton.Click += (_, __) => SaveClip();
-            y += Ui.S(SaveBarHeight + SaveBarGap);
+            replayRow.Controls.Add(replaySwitch);
+            replayRow.Controls.Add(saveButton);
+            y += replayRow.Height + Ui.S(CardGap);
 
-            shotRow.SetBounds(0, y, width, Ui.S(RowHeight));
+            shotRow.SetBounds(left, y, width, Ui.S(RowHeight));
             shotRow.Click += (_, __) => owner.TakeScreenshot();
 
             Controls.Add(recordRow);
             Controls.Add(replayRow);
-            Controls.Add(saveButton);
             Controls.Add(shotRow);
         }
 
         private void BuildMic()
         {
-            int width = ClientSize.Width - 1;
-            micRow.SetBounds(0, ClientSize.Height - Ui.S(MicHeight), width, Ui.S(MicHeight));
-
-            int arrow = Ui.S(36);
-            int value = Ui.S(34);
-            int height = Ui.S(44);
-            int top = (micRow.Height - height) / 2;
-            var next = new IconButton(Icons.Right) { IconSize = 11, HoverColor = Theme.Panel, Bounds = new Rectangle(width - Ui.S(16) - arrow, top, arrow, height) };
-            micValue.Font = Ui.Text(14);
-            micValue.SetBounds(next.Left - value, top, value, height);
-            var previous = new IconButton(Icons.Left) { IconSize = 11, HoverColor = Theme.Panel, Bounds = new Rectangle(micValue.Left - arrow, top, arrow, height) };
-            next.Click += (_, __) => ToggleMic();
-            previous.Click += (_, __) => ToggleMic();
-            micRow.Controls.Add(previous);
-            micRow.Controls.Add(micValue);
-            micRow.Controls.Add(next);
+            int left = Ui.S(Inset);
+            int width = ClientSize.Width - 1 - left * 2;
+            micRow.SetBounds(left, ClientSize.Height - Ui.S(MicHeight + Inset), width, Ui.S(MicHeight));
+            micSwitch.Location = new Point(width - Ui.S(16) - micSwitch.Width, (micRow.Height - micSwitch.Height) / 2);
+            micSwitch.Toggled += (_, __) => ToggleMic();
+            micRow.Controls.Add(micSwitch);
             Controls.Add(micRow);
+        }
+
+        private void BuildRecent()
+        {
+            int left = Ui.S(Inset);
+            recentLabelTop = shotRow.Bottom + Ui.S(14);
+            int top = recentLabelTop + Ui.S(SectionLabelHeight + 6);
+            recent.SetBounds(left, top, ClientSize.Width - 1 - left * 2, Math.Max(0, messageLabel.Top - Ui.S(8) - top));
+            recent.EmptyText = "No clips yet. Press " + saved.SaveHotkey + " with replay on.";
+            recent.Picked += (folder, file) =>
+            {
+                EnsureGallery();
+                gallery.ShowClip(folder, file);
+                UpdateTabs();
+            };
+            cache.Updated += recent.Invalidate;
+            Controls.Add(recent);
+            LoadRecent();
+        }
+
+        private async void LoadRecent()
+        {
+            string root = saved.ClipsDir;
+            List<KeyValuePair<LibraryFolder, LibraryFile>> newest = await Task.Run(() =>
+            {
+                try
+                {
+                    return Library.Scan(root, null)
+                        .SelectMany(folder => folder.Files.Select(file => new KeyValuePair<LibraryFolder, LibraryFile>(folder, file)))
+                        .OrderByDescending(pair => pair.Value.Modified)
+                        .Take(RecentCount)
+                        .ToList();
+                }
+                catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+                {
+                    return new List<KeyValuePair<LibraryFolder, LibraryFile>>();
+                }
+            });
+            if (!IsDisposed)
+            {
+                recent.Show(newest);
+            }
         }
 
         private void PaintRecordIcon(Graphics graphics, Rectangle box)
         {
-            Color color = recording ? Theme.Danger : Theme.Text;
+            Color color = Theme.Danger;
             int outer = Ui.S(16);
             int inner = Ui.S(6);
             int centerX = box.X + box.Width / 2;
@@ -360,9 +457,8 @@ namespace SmartBuffer
 
         private async void ToggleMic()
         {
-            bool on = !micOn;
+            bool on = micSwitch.Checked;
             micOn = on;
-            micValue.Text = on ? "On" : "Off";
             ignoreMicUntil = DateTime.UtcNow.AddSeconds(StatusGraceSeconds);
             string failure = await Ui.RunSafely(ctx, () => ObsControl.SetMic(ctx, on));
             draft.RecordMic = on;
@@ -410,9 +506,25 @@ namespace SmartBuffer
             recordRow.Subtitle = HotkeyLine(saved.RecordHotkey, action);
             recordRow.Trail = recording ? Icons.Stop : Icons.Play;
             recordRow.TrailColor = recording ? Theme.Danger : Theme.Text;
+            recordRow.Active = recording;
+            if (recording)
+            {
+                TimeSpan elapsed = DateTime.UtcNow - (status?.RecordingSinceUtc ?? DateTime.UtcNow);
+                SetHeaderStatus("Recording " + Library.LengthText(elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed), Theme.Danger);
+            }
             if (wasRecording != recording)
             {
                 recordRow.Invalidate();
+            }
+        }
+
+        private void SetHeaderStatus(string text, Color color)
+        {
+            if (header.Status != text || header.StatusColor != color)
+            {
+                header.Status = text;
+                header.StatusColor = color;
+                header.Invalidate();
             }
         }
 
@@ -438,7 +550,20 @@ namespace SmartBuffer
             {
                 micOn = status.Mic.Value;
             }
-            micValue.Text = micOn ? "On" : "Off";
+            micSwitch.Checked = micOn;
+            micRow.Active = micOn;
+            replayRow.Active = replaySwitch.Checked;
+            if (!recording)
+            {
+                if (!status.ObsRunning)
+                {
+                    SetHeaderStatus("OBS is closed", Theme.Slash);
+                }
+                else
+                {
+                    SetHeaderStatus(replaySwitch.Checked ? "Instant Replay is on" : "Ready", replaySwitch.Checked ? Theme.FolderEdge : Theme.Mint);
+                }
+            }
 
             if (DateTime.UtcNow >= messageUntil)
             {

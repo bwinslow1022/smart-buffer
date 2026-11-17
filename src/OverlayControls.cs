@@ -23,6 +23,13 @@ namespace SmartBuffer
         public static readonly Color ErrorText = Color.FromArgb(252, 165, 165);
         public static readonly Color FolderBack = Color.FromArgb(79, 63, 208);
         public static readonly Color FolderEdge = Color.FromArgb(141, 130, 248);
+        public static readonly Color Sky = Color.FromArgb(56, 189, 248);
+        public static readonly Color Mint = Color.FromArgb(52, 211, 153);
+
+        public static Color Mix(Color a, Color b, float amount)
+        {
+            return Color.FromArgb((int)(a.R + (b.R - a.R) * amount), (int)(a.G + (b.G - a.G) * amount), (int)(a.B + (b.B - a.B) * amount));
+        }
     }
 
     public sealed class Choice
@@ -105,6 +112,7 @@ namespace SmartBuffer
         private bool isOn;
 
         public event EventHandler Toggled;
+        public Color OnColor { get; set; } = Theme.Accent;
 
         public bool Checked
         {
@@ -141,7 +149,7 @@ namespace SmartBuffer
                 path.AddArc(0, 0, height, height, 90, 180);
                 path.AddArc(width - height, 0, height, height, 270, 180);
                 path.CloseFigure();
-                Color track = isOn ? Theme.Accent : Theme.Border;
+                Color track = isOn ? OnColor : Theme.Border;
                 if (!Enabled)
                 {
                     track = Color.FromArgb(120, track);
@@ -458,6 +466,10 @@ namespace SmartBuffer
         {
             Graphics graphics = e.Graphics;
             graphics.Clear(BackColor);
+            if (selected || Hovered)
+            {
+                Ui.FillRound(graphics, selected ? Theme.Border : Theme.Hover, new Rectangle(0, 0, Width - 1, Height - 1), Ui.S(8));
+            }
             Color color = selected || Hovered ? Theme.Text : Theme.Muted;
             Font font = Ui.Strong(15);
             int textWidth = Ui.Measure(label, font);
@@ -468,13 +480,6 @@ namespace SmartBuffer
                 Ui.DrawIcon(graphics, icon, new Rectangle(x, 0, Ui.S(18), Height), color, 15);
             }
             Ui.DrawLine(graphics, label, font, new Rectangle(x + iconWidth, 0, textWidth + 2, Height), color);
-            if (selected)
-            {
-                using (var brush = new SolidBrush(Theme.Accent))
-                {
-                    graphics.FillRectangle(brush, 0, Height - Ui.S(2), Width, Ui.S(2));
-                }
-            }
         }
     }
 
@@ -489,6 +494,34 @@ namespace SmartBuffer
         public string Icon { get; set; }
         public Action<Graphics, Rectangle> IconPainter { get; set; }
         public bool Clickable { get; set; }
+        public bool Card { get; set; }
+        // the title part on top, anything below it (like the save button) is the row's own child
+        public int HeadHeight { get; set; }
+        // colour of the icon badge, and of the outline while Active
+        public Color Tint { get; set; } = Theme.Accent;
+        private bool active;
+
+        public bool Active
+        {
+            get => active;
+            set
+            {
+                Change(ref active, value);
+                foreach (Control child in Controls)
+                {
+                    child.BackColor = Fill;
+                }
+            }
+        }
+
+        protected override void OnControlAdded(ControlEventArgs e)
+        {
+            base.OnControlAdded(e);
+            e.Control.BackColor = Fill;
+        }
+
+        // child controls sit on the card, so they need its fill as their background
+        public Color Fill => Card ? (active ? Theme.Mix(Theme.Panel, Tint, 0.08F) : Theme.Panel) : BackColor;
 
         public string Subtitle
         {
@@ -516,26 +549,57 @@ namespace SmartBuffer
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics graphics = e.Graphics;
-            graphics.Clear(Clickable && Hovered ? Theme.Panel : BackColor);
-            var iconBox = new Rectangle(Ui.S(16), 0, Ui.S(24), Height);
-            if (IconPainter != null)
+            int head = HeadHeight > 0 ? HeadHeight : Height;
+            int left = Ui.S(54);
+            if (Card)
             {
-                IconPainter(graphics, iconBox);
+                graphics.Clear(BackColor);
+                var box = new Rectangle(0, 0, Width - 1, Height - 1);
+                bool hot = Clickable && Hovered;
+                Ui.FillRound(graphics, hot ? Theme.Mix(Theme.Hover, Tint, 0.06F) : Fill, box, Ui.S(12));
+                Color edge = active ? Theme.Mix(Theme.Border, Tint, 0.75F) : hot ? Theme.Mix(Theme.Border, Tint, 0.45F) : Theme.Border;
+                Ui.DrawRound(graphics, edge, box, Ui.S(12), active ? Ui.Scale * 1.5F : 1F);
+
+                // a round tinted badge behind the icon
+                int size = Ui.S(38);
+                var badge = new Rectangle(Ui.S(12), (head - size) / 2, size, size);
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var brush = new SolidBrush(Color.FromArgb(active ? 70 : 40, Tint)))
+                {
+                    graphics.FillEllipse(brush, badge);
+                }
+                if (IconPainter != null)
+                {
+                    IconPainter(graphics, badge);
+                }
+                else if (Icon != null)
+                {
+                    Ui.DrawIcon(graphics, Icon, badge, Tint, 17);
+                }
+                left = Ui.S(62);
             }
-            else if (Icon != null)
+            else
             {
-                Ui.DrawIcon(graphics, Icon, iconBox, Theme.Text, 18);
+                graphics.Clear(Clickable && Hovered ? Theme.Panel : BackColor);
+                var iconBox = new Rectangle(Ui.S(16), 0, Ui.S(24), head);
+                if (IconPainter != null)
+                {
+                    IconPainter(graphics, iconBox);
+                }
+                else if (Icon != null)
+                {
+                    Ui.DrawIcon(graphics, Icon, iconBox, Theme.Text, 18);
+                }
             }
 
-            int left = Ui.S(54);
             int width = Width - left - Ui.S(60);
-            int middle = Height / 2;
+            int middle = head / 2;
             Ui.DrawLine(graphics, title, Ui.Strong(16), new Rectangle(left, middle - Ui.S(22), width, Ui.S(23)), Theme.Text);
             Ui.DrawLine(graphics, subtitle ?? "", Ui.Text(13), new Rectangle(left, middle + Ui.S(1), Width - left - Ui.S(16), Ui.S(19)), Theme.Muted);
 
             if (trail != null)
             {
-                Ui.DrawIcon(graphics, trail, new Rectangle(Width - Ui.S(38), 0, Ui.S(22), Height), trailColor, 15);
+                Ui.DrawIcon(graphics, trail, new Rectangle(Width - Ui.S(38), 0, Ui.S(22), head), trailColor, 15);
             }
         }
 
@@ -817,6 +881,104 @@ namespace SmartBuffer
                     parts[i].Value?.Invoke();
                     return;
                 }
+            }
+        }
+    }
+
+    // the newest clips as thumbnails, two across, click one to play it
+    public sealed class RecentStrip : PaintedControl
+    {
+        private const int Columns = 2;
+        private const int Gap = 8;
+
+        private readonly MediaCache cache;
+        private List<KeyValuePair<LibraryFolder, LibraryFile>> clips = new List<KeyValuePair<LibraryFolder, LibraryFile>>();
+        private int hot = -1;
+
+        public event Action<LibraryFolder, LibraryFile> Picked;
+        public string EmptyText { get; set; } = "";
+
+        public RecentStrip(MediaCache cache)
+        {
+            this.cache = cache;
+        }
+
+        public int Rows => Math.Max(1, (clips.Count + Columns - 1) / Columns);
+
+        public void Show(List<KeyValuePair<LibraryFolder, LibraryFile>> value)
+        {
+            clips = value;
+            Invalidate();
+        }
+
+        private Rectangle Cell(int index)
+        {
+            int gap = Ui.S(Gap);
+            int width = (Width - 1 - gap * (Columns - 1)) / Columns;
+            int height = width * 9 / 16;
+            return new Rectangle((index % Columns) * (width + gap), (index / Columns) * (height + gap), width, height);
+        }
+
+        private int HitTest(Point point)
+        {
+            for (int i = 0; i < clips.Count; i++)
+            {
+                if (Cell(i).Contains(point) && Cell(i).Bottom <= Height)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            int index = HitTest(e.Location);
+            Cursor = index >= 0 ? Cursors.Hand : Cursors.Default;
+            Change(ref hot, index);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            hot = -1;
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            base.OnClick(e);
+            int index = HitTest(PointToClient(Cursor.Position));
+            if (index >= 0)
+            {
+                Picked?.Invoke(clips[index].Key, clips[index].Value);
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics graphics = e.Graphics;
+            graphics.Clear(BackColor);
+            if (clips.Count == 0)
+            {
+                var box = new Rectangle(0, 0, Width - 1, Math.Min(Height - 1, Ui.S(88)));
+                using (var pen = new Pen(Theme.Border) { DashStyle = DashStyle.Dash })
+                using (GraphicsPath path = Ui.Round(box, Ui.S(12)))
+                {
+                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    graphics.DrawPath(pen, path);
+                }
+                Ui.DrawLine(graphics, EmptyText, Ui.Text(13), box, Theme.Muted, TextFormatFlags.HorizontalCenter);
+                return;
+            }
+            for (int i = 0; i < clips.Count; i++)
+            {
+                Rectangle cell = Cell(i);
+                if (cell.Bottom > Height)
+                {
+                    break;
+                }
+                VideoThumb.Draw(graphics, cell, cache.Get(clips[i].Value.Path), i == hot ? Theme.Accent : Theme.Border, i == hot ? Ui.Scale * 2F : 1F, 10, 6, 11);
             }
         }
     }

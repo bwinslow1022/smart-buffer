@@ -17,6 +17,13 @@ namespace SmartBuffer
                 return Elevated.Run(args);
             }
 
+            if (args.Contains("--selftest"))
+            {
+                Highlights.SelfTest();
+                Console.WriteLine("self-test ok");
+                return 0;
+            }
+
             Context ctx = Context.ForThisUser();
             string action = args.Contains("--remove") ? "remove" : args.Contains("--setup") ? "setup" : null;
 
