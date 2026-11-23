@@ -1,10 +1,14 @@
 -- sorts clips by game, plays a sound, takes commands from the overlay
 local obs = obslua
 local ffi = require("ffi")
+local bit = require("bit")
 
 ffi.cdef [[
 typedef struct { long left, top, right, bottom; } SMARTBUFFER_RECT;
 typedef struct { unsigned long size; SMARTBUFFER_RECT monitor; SMARTBUFFER_RECT work; unsigned long flags; } SMARTBUFFER_MONITORINFO;
+typedef struct { unsigned long size; SMARTBUFFER_RECT monitor; SMARTBUFFER_RECT work; unsigned long flags; wchar_t device[32]; } SMARTBUFFER_MONITORINFOEX;
+typedef struct { unsigned long size; wchar_t name[32]; wchar_t text[128]; unsigned long flags; wchar_t id[128]; wchar_t key[128]; } SMARTBUFFER_DISPLAY_DEVICE;
+int EnumDisplayDevicesW(const wchar_t *, unsigned long, SMARTBUFFER_DISPLAY_DEVICE *, unsigned long);
 typedef int (*SMARTBUFFER_ENUM)(void *, intptr_t);
 int MultiByteToWideChar(unsigned int, unsigned long, const char *, int, wchar_t *, int);
 int WideCharToMultiByte(unsigned int, unsigned long, const wchar_t *, int, char *, int, const char *, int *);
@@ -40,6 +44,11 @@ local RECORD_PATH_WAIT_MS = 10000
 local MOVE_WAIT_MS = 120000
 local OUTPUT_SECTION = "AdvOut"
 local OUTPUT_PATH_KEY = "RecFilePath"
+local MONITOR_MS = 1000
+local MONITOR_ACTIVE = "active"
+local ATTACHED_TO_DESKTOP = 0x1
+local PRIMARY_DEVICE = 0x4
+local GET_DEVICE_INTERFACE_NAME = 0x1
 
 -- fullscreen capture also grabs browsers and apps, their window titles make junk folders
 local NOT_GAMES = {
@@ -63,6 +72,10 @@ local capture_game = true
 local sort_by_game = true
 local save_sound = true
 local recordings_dir = ""
+local monitor_choice = ""
+local monitor_wait = 0
+local applied_monitor = nil
+local applied_layout = nil
 
 local game = nil
 local connected = false
@@ -196,6 +209,98 @@ local function foreground_game()
         return nil
     end
     return game_name(title, "")
+end
+
+local function wide_string(chars, max)
+    local length = 0
+    while length < max and chars[length] ~= 0 do
+        length = length + 1
+    end
+    return narrow(chars, length)
+end
+
+-- the same id obs's monitor capture uses, like \\?\DISPLAY#AOCB454#...
+local function monitor_id(adapter_name)
+    local device = ffi.new("SMARTBUFFER_DISPLAY_DEVICE")
+    device.size = ffi.sizeof(device)
+    if ffi.C.EnumDisplayDevicesW(adapter_name, 0, device, GET_DEVICE_INTERFACE_NAME) == 0 then
+        return nil
+    end
+    return wide_string(device.id, 128)
+end
+
+-- every connected monitor's id, and which one windows calls main
+local function monitors()
+    local ids, primary = {}, nil
+    local adapter = ffi.new("SMARTBUFFER_DISPLAY_DEVICE")
+    local index = 0
+    while true do
+        adapter.size = ffi.sizeof(adapter)
+        if ffi.C.EnumDisplayDevicesW(nil, index, adapter, 0) == 0 then
+            break
+        end
+        if bit.band(adapter.flags, ATTACHED_TO_DESKTOP) ~= 0 then
+            local id = monitor_id(adapter.name)
+            if id ~= nil and id ~= "" then
+                ids[#ids + 1] = id
+                if bit.band(adapter.flags, PRIMARY_DEVICE) ~= 0 then
+                    primary = id
+                end
+            end
+        end
+        index = index + 1
+    end
+    return ids, primary
+end
+
+local function active_monitor()
+    local window = ffi.C.GetForegroundWindow()
+    if window == nil then
+        return nil
+    end
+    -- clicking the desktop, the taskbar, obs or smart buffer itself doesn't move the capture
+    local title = window_title(window)
+    if title == "" or title == "Program Manager" or title == "Smart Buffer" or title:match("^OBS %d") then
+        return nil
+    end
+    local info = ffi.new("SMARTBUFFER_MONITORINFOEX")
+    info.size = ffi.sizeof(info)
+    local monitor = ffi.C.MonitorFromWindow(window, MONITOR_NEAREST)
+    if ffi.C.GetMonitorInfoW(monitor, ffi.cast("SMARTBUFFER_MONITORINFO *", info)) == 0 then
+        return nil
+    end
+    return monitor_id(info.device)
+end
+
+-- obs falls back to the first monitor when it starts while the screens are asleep and never
+-- goes back, so the desktop source is pointed again whenever the choice or the monitors change
+local function follow_monitor()
+    local ids, primary = monitors()
+    local wanted = monitor_choice
+    if monitor_choice == "" then
+        wanted = primary
+    elseif monitor_choice == MONITOR_ACTIVE then
+        wanted = active_monitor() or applied_monitor or primary
+    end
+    local layout = table.concat(ids, "|")
+    local present = false
+    for _, id in ipairs(ids) do
+        present = present or id == wanted
+    end
+    if not present or (wanted == applied_monitor and layout == applied_layout) then
+        return
+    end
+    local source = obs.obs_get_source_by_name(DESKTOP_SOURCE)
+    if source == nil then
+        return
+    end
+    local data = obs.obs_data_create()
+    obs.obs_data_set_string(data, "monitor_id", wanted)
+    obs.obs_source_update(source, data)
+    obs.obs_data_release(data)
+    obs.obs_source_release(source)
+    applied_monitor = wanted
+    applied_layout = layout
 end
 
 local function mic_state()
@@ -446,6 +551,11 @@ local function check_commands()
         write_status()
     end
     run_moves()
+    monitor_wait = monitor_wait + COMMAND_MS
+    if monitor_wait >= MONITOR_MS then
+        monitor_wait = 0
+        follow_monitor()
+    end
     -- a recording that never starts sends no event, and replays still need their own folder back
     if clips_path ~= nil then
         record_path_wait = record_path_wait + COMMAND_MS
@@ -499,6 +609,7 @@ function script_defaults(settings)
     obs.obs_data_set_default_bool(settings, "sort_by_game", true)
     obs.obs_data_set_default_bool(settings, "save_sound", true)
     obs.obs_data_set_default_string(settings, "recordings_dir", "")
+    obs.obs_data_set_default_string(settings, "monitor", "")
 end
 
 function script_load(settings)
@@ -506,6 +617,7 @@ function script_load(settings)
     sort_by_game = obs.obs_data_get_bool(settings, "sort_by_game")
     save_sound = obs.obs_data_get_bool(settings, "save_sound")
     recordings_dir = obs.obs_data_get_string(settings, "recordings_dir")
+    monitor_choice = obs.obs_data_get_string(settings, "monitor")
 
     sound_file = script_path() .. "saved.wav"
     command_file = script_path() .. "command.txt"

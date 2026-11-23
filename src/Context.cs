@@ -27,9 +27,10 @@ namespace SmartBuffer
         public string ScriptPath => Path.Combine(AppDir, "smartbuffer.lua");
         public string SoundPath => Path.Combine(AppDir, "saved.wav");
         public string LogPath => Path.Combine(AppDir, "setup.log");
-        // the installer puts the app in Program Files; without it, setup copies the exe into AppData
+        // the installer puts the app in Program Files; without it, setup copies the exe into AppData.
+        // (a per-user install was tried in 0.9.4 and Defender's behavior scan flags it as malware while unsigned)
         public string InstalledExe => ProgramFilesExe() ?? Path.Combine(AppDir, AppName + ".exe");
-        public bool IsProgramFilesInstall => ProgramFilesExe() != null;
+        public bool IsInstallerInstall => ProgramFilesExe() != null;
 
         public static string ProgramFilesExe()
         {

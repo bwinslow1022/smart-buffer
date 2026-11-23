@@ -91,7 +91,8 @@ ReplayBuffer={hotkey.ToObsJson()}
             Directory.CreateDirectory(Path.GetDirectoryName(ctx.CollectionPath));
 
             bool captureGame = settings.Capture != Settings.CaptureDesktop;
-            string desktopMonitor = captureGame ? SystemInfo.PrimaryDisplay().MonitorId : canvas.MonitorId;
+            // only the starting point, the obs script keeps it on the chosen monitor from there
+            string desktopMonitor = canvas.MonitorId;
 
             string desktopUuid = NewUuid();
             var sources = new List<object>();
@@ -159,6 +160,7 @@ ReplayBuffer={hotkey.ToObsJson()}
                                             { "sort_by_game", settings.SortByGame },
                                             { "save_sound", settings.SaveSound },
                                             { "recordings_dir", settings.RecordingsDir.Replace('\\', '/') },
+                                            { "monitor", settings.MonitorId ?? "" },
                                         }
                                     },
                                 },

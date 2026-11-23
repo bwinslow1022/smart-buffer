@@ -139,14 +139,17 @@ namespace SmartBuffer
                 UpdateCaptureHelp();
             }));
 
+            var monitors = new List<Choice>
+            {
+                new Choice("Main monitor", ""),
+                new Choice("Where I'm working", Settings.MonitorActive),
+            };
             List<DisplayInfo> displays = SystemInfo.AllDisplays();
             DisplayInfo primary = displays.FirstOrDefault(d => d.IsPrimary);
-            Choice[] monitors = displays
-                .Select(d => new Choice($"Display {d.Number} ({d.Width}x{d.Height}){(d.IsPrimary ? ", main" : "")}", d.MonitorId))
-                .ToArray();
-            string currentMonitor = string.IsNullOrEmpty(draft.MonitorId) ? primary?.MonitorId : draft.MonitorId;
-            monitorCombo = NewCombo(monitors, currentMonitor, value => draft.MonitorId = (string)value);
-            AddRow(capture, "Monitor", "Only used by desktop capture.", monitorCombo);
+            monitors.AddRange(displays
+                .Select(d => new Choice($"Display {d.Number} ({d.Width}x{d.Height}){(d.IsPrimary ? ", main" : "")}", d.MonitorId)));
+            monitorCombo = NewCombo(monitors.ToArray(), draft.MonitorId ?? "", value => draft.MonitorId = (string)value);
+            AddRow(capture, "Monitor", "What's recorded when no game is. \"Where I'm working\" follows the active window.", monitorCombo);
             EndCard(capture, ref y);
 
             Card quality = AddCard(panel, ref y, "Quality");
@@ -274,7 +277,6 @@ namespace SmartBuffer
             captureHelp.Text = desktop
                 ? "Records the whole monitor, pop-ups and other windows included."
                 : "Just the game, cleanest footage. Some anti-cheats may object.";
-            monitorCombo.Enabled = desktop;
         }
 
         private void AddTab(string title, Panel page)

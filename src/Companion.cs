@@ -25,6 +25,7 @@ namespace SmartBuffer
         private const int MicHotkeyId = 6;
         private const int UpdateCheckMs = 6 * 60 * 60 * 1000;
         private readonly System.Windows.Forms.Timer updateTimer;
+        private bool installing;
 
         public ReadyUpdate Update { get; private set; }
         private const int WmHotkey = 0x0312;
@@ -98,8 +99,13 @@ namespace SmartBuffer
                     return 0;
                 }
                 RefreshAssets(ctx);
+                string updatedFrom = UpdateCheck.JustUpdatedFrom(ctx);
                 using (var companion = new Companion(ctx))
                 {
+                    if (updatedFrom != null)
+                    {
+                        companion.ShowUpdated();
+                    }
                     if (atLogin)
                     {
                         companion.StartObsAtLogin();
@@ -410,16 +416,30 @@ namespace SmartBuffer
             Task.Run(() => Update = UpdateCheck.Prepare(ctx));
         }
 
+        // a moment after starting, so the tray is up before the card shows
+        private void ShowUpdated()
+        {
+            var once = new System.Windows.Forms.Timer { Interval = 2000 };
+            once.Tick += (_, __) =>
+            {
+                once.Dispose();
+                SaveToast.Show("Smart Buffer updated", "Now on version " + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3), Icons.Download);
+            };
+            once.Start();
+        }
+
         // the installer closes this app, installs quietly and starts it again
         public void InstallUpdate()
         {
-            if (Update == null)
+            if (Update == null || installing)
             {
                 return;
             }
+            installing = true;
             overlay?.CloseForOtherApp();
             if (!UpdateCheck.Install(Update))
             {
+                installing = false;
                 tray.ShowBalloonTip(4000, Context.AppName, "The update wasn't installed. Open the overlay to try again.", ToolTipIcon.Info);
             }
         }

@@ -319,10 +319,9 @@ namespace SmartBuffer
         // the one-liner runs from a temp folder that gets deleted, so i keep my own copy
         private static void InstallApp(Context ctx, Settings settings)
         {
-            if (ctx.IsProgramFilesInstall)
+            if (ctx.IsInstallerInstall)
             {
                 // the installer owns the exe and the start menu entry; clear out an older AppData copy
-                WindowsTweaks.DeleteStartMenuShortcut();
                 string old = Path.Combine(ctx.AppDir, Context.AppName + ".exe");
                 if (File.Exists(old) && !string.Equals(old, Assembly.GetEntryAssembly().Location, StringComparison.OrdinalIgnoreCase))
                 {
@@ -350,7 +349,7 @@ namespace SmartBuffer
         // a running exe can't delete itself so cmd does it a moment after i exit
         private static void DeleteInstalledExe(Context ctx)
         {
-            if (ctx.IsProgramFilesInstall)
+            if (ctx.IsInstallerInstall)
             {
                 return; // the uninstaller deletes it
             }

@@ -29,7 +29,9 @@ namespace SmartBuffer
         public int StorageLimitGb { get; set; } // 0 = off, nothing is ever deleted
 
         public string Capture { get; set; } = CaptureGame;
+        // "" = windows' main monitor, MonitorActive = whichever has the active window, else a monitor id
         public string MonitorId { get; set; } = "";
+        public const string MonitorActive = "active";
         // video bitrate in kbps (older versions also stored a constant-quality level, Load converts those)
         public int Quality { get; set; } = 25000;
         public int Fps { get; set; } = 60;

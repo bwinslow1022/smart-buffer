@@ -20,8 +20,8 @@ namespace SmartBuffer
         public string Setup { get; set; }
     }
 
-    // downloads a newer release in the background; installing still takes one click and one Windows "Yes",
-    // since the app lives in Program Files. GitHub is only asked for the latest release, nothing about the user is sent
+    // downloads a newer release in the background; installing takes one click and one Windows "Yes", since the app
+    // lives in Program Files. GitHub is only asked for the latest release, nothing about the user is sent
     public static class UpdateCheck
     {
         public const string ReleasesPage = "https://github.com/bwinslow1022/smart-buffer/releases/latest";
@@ -34,6 +34,25 @@ namespace SmartBuffer
         private static readonly Regex HashLine = new Regex(@"SHA-256:\s*`?([0-9a-fA-F]{64})");
 
         private static string CachePath(Context ctx) => Path.Combine(ctx.AppDir, "update-check.txt");
+        private static string LastVersionPath(Context ctx) => Path.Combine(ctx.AppDir, "last-version.txt");
+
+        /// The version this replaced, once, right after an update; null otherwise (and on a first run).
+        public static string JustUpdatedFrom(Context ctx)
+        {
+            string current = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+            try
+            {
+                string path = LastVersionPath(ctx);
+                string last = File.Exists(path) ? File.ReadAllText(path).Trim() : null;
+                Directory.CreateDirectory(ctx.AppDir);
+                File.WriteAllText(path, current);
+                return last != null && last != current ? last : null;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
         private static string UpdateDir(Context ctx) => Path.Combine(ctx.AppDir, "update");
 
         /// A verified installer for a newer version, downloaded if needed, or null. Runs on the calling thread.
@@ -61,7 +80,7 @@ namespace SmartBuffer
             }
         }
 
-        /// Runs the installer silently, Windows asks for approval first. False if that was declined.
+        /// Runs the installer silently. False if Windows approval was needed and declined.
         public static bool Install(ReadyUpdate update)
         {
             try

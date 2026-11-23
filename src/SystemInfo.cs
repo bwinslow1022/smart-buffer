@@ -57,16 +57,13 @@ namespace SmartBuffer
             return primary;
         }
 
-        // desktop capture sizes the canvas to the monitor it records so nothing gets scaled
+        // a picked monitor sizes the canvas so nothing gets scaled; main and "active" use the main monitor's size
         public static DisplayInfo CanvasFor(Settings settings)
         {
-            if (settings.Capture == Settings.CaptureDesktop)
+            DisplayInfo chosen = AllDisplays().FirstOrDefault(d => d.MonitorId == settings.MonitorId);
+            if (chosen != null)
             {
-                DisplayInfo chosen = AllDisplays().FirstOrDefault(d => d.MonitorId == settings.MonitorId);
-                if (chosen != null)
-                {
-                    return chosen;
-                }
+                return chosen;
             }
             return PrimaryDisplay();
         }
